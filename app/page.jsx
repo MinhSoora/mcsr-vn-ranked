@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader } from 'lucide-react';
+import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader, Check, XCircle, Percent } from 'lucide-react';
 
 export default function MCSRLeaderboardPro() {
   const [players, setPlayers] = useState([]);
@@ -8,10 +8,12 @@ export default function MCSRLeaderboardPro() {
   const [loading, setLoading] = useState(true);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [selectedMatch, setSelectedMatch] = useState(null);
+  const [playerDetails, setPlayerDetails] = useState({});
   const [playerMatches, setPlayerMatches] = useState({});
   const [matchLoading, setMatchLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -31,10 +33,11 @@ export default function MCSRLeaderboardPro() {
   const fetchLeaderboard = async () => {
     try {
       setLoading(true);
+      setRefreshing(true);
       setError(null);
       
-      // Sử dụng ?country=vn để lấy player Việt Nam
-      const response = await fetch('https://api.mcsrranked.com/leaderboard?country=vn');
+      // Sử dụng API mới cho leaderboard Việt Nam
+      const response = await fetch('https://mcsrranked.com/api/leaderboard?country=VN');
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -42,26 +45,56 @@ export default function MCSRLeaderboardPro() {
       
       const result = await response.json();
       
-      if (!result || result.status !== 'success' || !result.data) {
+      if (!result || !result.users) {
         throw new Error('Invalid response format');
       }
       
-      const vnPlayers = result.data.users || [];
+      // Lọc và sắp xếp người chơi Việt Nam
+      const vnPlayers = result.users
+        .filter(user => user.country === 'VN')
+        .sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0));
       
       setPlayers(vnPlayers);
       setFilteredPlayers(vnPlayers);
       setLoading(false);
+      setRefreshing(false);
     } catch (err) {
       console.error('Error fetching leaderboard:', err);
       setError('Không thể tải dữ liệu. Vui lòng thử lại sau.');
       setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const fetchPlayerDetails = async (uuid) => {
+    if (playerDetails[uuid]) {
+      return playerDetails[uuid];
+    }
+
+    try {
+      const response = await fetch(`https://mcsrranked.com/api/users/${uuid}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      if (result.status === 'success' && result.data) {
+        setPlayerDetails(prev => ({ ...prev, [uuid]: result.data }));
+        return result.data;
+      }
+      return null;
+    } catch (err) {
+      console.error('Error fetching player details:', err);
+      return null;
     }
   };
 
   const fetchMatchDetails = async (matchId) => {
     try {
       setMatchLoading(true);
-      const response = await fetch(`https://api.mcsrranked.com/matches/${matchId}`);
+      const response = await fetch(`https://mcsrranked.com/api/matches/${matchId}`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -85,11 +118,14 @@ export default function MCSRLeaderboardPro() {
     }
 
     try {
-      const response = await fetch(`https://api.mcsrranked.com/users/${uuid}/matches?type=2&count=10`);
-      if (!response.ok) return [];
+      const response = await fetch(`https://mcsrranked.com/api/users/${uuid}/matches?count=10`);
+      
+      if (!response.ok) {
+        return [];
+      }
       
       const result = await response.json();
-      const matches = result.status === 'success' && result.data ? result.data.data : [];
+      const matches = result.status === 'success' && result.data ? result.data : [];
       
       setPlayerMatches(prev => ({ ...prev, [uuid]: matches }));
       return matches;
@@ -100,7 +136,7 @@ export default function MCSRLeaderboardPro() {
   };
 
   const formatTime = (ms) => {
-    if (!ms) return 'N/A';
+    if (!ms && ms !== 0) return 'N/A';
     const totalSeconds = ms / 1000;
     const mins = Math.floor(totalSeconds / 60);
     const secs = Math.floor(totalSeconds % 60);
@@ -109,6 +145,7 @@ export default function MCSRLeaderboardPro() {
   };
 
   const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
     const date = new Date(timestamp * 1000);
     return date.toLocaleDateString('vi-VN', { 
       year: 'numeric', 
@@ -154,12 +191,34 @@ export default function MCSRLeaderboardPro() {
     return <span className="text-2xl font-black text-white drop-shadow-lg">#{rank}</span>;
   };
 
-  const calculateStats = (player) => {
-    const records = player.statistics?.season?.['2'] || {};
-    const wins = records.win || 0;
-    const loses = records.lose || 0;
-    const total = wins + loses;
-    const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
+  const calculateStats = (player, playerDetail = null) => {
+    // Sử dụng dữ liệu từ playerDetails nếu có
+    if (playerDetail) {
+      const stats = playerDetail.statistics || {};
+      const wins = stats.win || 0;
+      const loses = stats.lose || 0;
+      const total = wins + loses;
+      const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
+      
+      return {
+        wins,
+        loses,
+        total,
+        winRate,
+        elo: Math.round(player.eloRate || 0),
+        highestElo: Math.round(player.highestEloRate || player.eloRate || 0),
+        rank: player.eloRank || player.position || 0,
+        kills: stats.kills || 0,
+        deaths: stats.deaths || 0,
+        matches: total
+      };
+    }
+    
+    // Fallback nếu không có details
+    const wins = 0;
+    const loses = 0;
+    const total = 0;
+    const winRate = 0;
     
     return {
       wins,
@@ -168,7 +227,10 @@ export default function MCSRLeaderboardPro() {
       winRate,
       elo: Math.round(player.eloRate || 0),
       highestElo: Math.round(player.highestEloRate || player.eloRate || 0),
-      rank: player.eloRank || 0
+      rank: player.eloRank || player.position || 0,
+      kills: 0,
+      deaths: 0,
+      matches: 0
     };
   };
 
@@ -176,9 +238,19 @@ export default function MCSRLeaderboardPro() {
     if (selectedPlayer?.uuid === player.uuid) {
       setSelectedPlayer(null);
     } else {
-      setSelectedPlayer({ ...player, recentMatches: [] });
-      const matches = await fetchPlayerMatches(player.uuid);
-      setSelectedPlayer(prev => prev?.uuid === player.uuid ? { ...player, recentMatches: matches } : prev);
+      setSelectedPlayer({ ...player, recentMatches: [], details: null });
+      
+      // Fetch player details và matches song song
+      const [details, matches] = await Promise.all([
+        fetchPlayerDetails(player.uuid),
+        fetchPlayerMatches(player.uuid)
+      ]);
+      
+      setSelectedPlayer(prev => prev?.uuid === player.uuid ? { 
+        ...player, 
+        recentMatches: matches,
+        details
+      } : prev);
     }
   };
 
@@ -215,7 +287,7 @@ export default function MCSRLeaderboardPro() {
         <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
           <div className="bg-red-900/90 border-4 border-red-600 rounded-2xl p-8 text-white backdrop-blur-lg shadow-2xl max-w-md w-full">
             <div className="text-center mb-6">
-              <X className="w-20 h-20 text-red-400 mx-auto mb-4" />
+              <XCircle className="w-20 h-20 text-red-400 mx-auto mb-4" />
               <p className="text-3xl font-black mb-2">{error}</p>
             </div>
             <button 
@@ -274,14 +346,16 @@ export default function MCSRLeaderboardPro() {
                     <Zap className="w-5 h-5 text-yellow-400" />
                     <p className="text-sm text-yellow-300 font-bold">THỜI GIAN</p>
                   </div>
-                  <p className="text-2xl font-black text-yellow-400">{formatTime(selectedMatch.result?.time)}</p>
+                  <p className="text-2xl font-black text-yellow-400">
+                    {formatTime(selectedMatch.result?.time || selectedMatch.time)}
+                  </p>
                 </div>
                 <div className="bg-gradient-to-br from-purple-700/50 to-purple-900/50 rounded-xl p-5 border-2 border-purple-500 backdrop-blur-sm">
                   <div className="flex items-center gap-2 mb-2">
                     <Star className="w-5 h-5 text-purple-400" />
                     <p className="text-sm text-purple-300 font-bold">MÙA</p>
                   </div>
-                  <p className="text-xl font-black text-white">Season {selectedMatch.season}</p>
+                  <p className="text-xl font-black text-white">Season {selectedMatch.season || 'N/A'}</p>
                 </div>
               </div>
 
@@ -293,7 +367,7 @@ export default function MCSRLeaderboardPro() {
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {selectedMatch.players?.map((p, idx) => {
-                    const isWinner = selectedMatch.result?.uuid === p.uuid;
+                    const isWinner = selectedMatch.result?.uuid === p.uuid || selectedMatch.winner === p.uuid;
                     const change = selectedMatch.changes?.find(c => c.uuid === p.uuid);
                     
                     return (
@@ -302,8 +376,8 @@ export default function MCSRLeaderboardPro() {
                           <div className="flex items-center gap-3">
                             {isWinner && <Trophy className="w-7 h-7 text-yellow-400 animate-pulse" />}
                             <div>
-                              <p className="text-xl font-black text-white">{p.nickname}</p>
-                              <p className="text-sm text-gray-400 font-bold">UUID: {p.uuid.slice(0, 8)}...</p>
+                              <p className="text-xl font-black text-white">{p.nickname || p.username || 'Unknown'}</p>
+                              <p className="text-sm text-gray-400 font-bold">UUID: {p.uuid?.slice(0, 8) || 'N/A'}...</p>
                             </div>
                           </div>
                           {change && (
@@ -337,7 +411,7 @@ export default function MCSRLeaderboardPro() {
                             <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center">
                               <span className="text-xl font-black text-white">#{idx + 1}</span>
                             </div>
-                            <span className="text-lg font-bold text-white">{player?.nickname}</span>
+                            <span className="text-lg font-bold text-white">{player?.nickname || player?.username}</span>
                           </div>
                           <span className="text-2xl font-black text-purple-400">{formatTime(comp.time)}</span>
                         </div>
@@ -363,7 +437,7 @@ export default function MCSRLeaderboardPro() {
                         <div key={player.uuid} className="bg-gradient-to-br from-blue-900/50 to-blue-700/50 rounded-xl p-5 border-2 border-blue-500 backdrop-blur-sm">
                           <p className="text-xl font-black text-white mb-4 flex items-center gap-2">
                             <Award className="w-6 h-6 text-blue-400" />
-                            {player.nickname}
+                            {player.nickname || player.username}
                           </p>
                           <div className="space-y-2">
                             {playerTimelines.sort((a, b) => a.time - b.time).map((timeline, idx) => (
@@ -441,13 +515,30 @@ export default function MCSRLeaderboardPro() {
                 </div>
               </div>
 
-              <div className="inline-block bg-green-900/80 border-4 border-green-600 rounded-xl px-6 py-3 backdrop-blur-sm">
-                <p 
-                  className="text-gray-200 text-xl font-bold"
-                  style={{textShadow: '2px 2px 0 #000'}}
+              <div className="flex items-center justify-center gap-4 mb-6">
+                <div className="inline-block bg-green-900/80 border-4 border-green-600 rounded-xl px-6 py-3 backdrop-blur-sm">
+                  <p 
+                    className="text-gray-200 text-xl font-bold"
+                    style={{textShadow: '2px 2px 0 #000'}}
+                  >
+                    📊 TÌM THẤY <span className="text-yellow-400 text-2xl font-black">{filteredPlayers.length}</span> NGƯỜI CHƠI
+                  </p>
+                </div>
+                
+                <button 
+                  onClick={fetchLeaderboard}
+                  disabled={refreshing}
+                  className="px-6 py-3 bg-gradient-to-r from-green-700 to-emerald-800 hover:from-green-600 hover:to-emerald-700 rounded-xl transition transform hover:scale-105 border-4 border-green-800 shadow-xl flex items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  📊 TÌM THẤY <span className="text-yellow-400 text-2xl font-black">{filteredPlayers.length}</span> NGƯỜI CHƠI
-                </p>
+                  {refreshing ? (
+                    <Loader className="w-5 h-5 text-white animate-spin" />
+                  ) : (
+                    <Zap className="w-5 h-5 text-yellow-400 group-hover:animate-spin" />
+                  )}
+                  <span className="text-lg font-black text-white">
+                    {refreshing ? 'ĐANG CẬP NHẬT...' : 'LÀM MỚI'}
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -459,7 +550,7 @@ export default function MCSRLeaderboardPro() {
                   <div className="bg-gradient-to-b from-gray-300 via-gray-400 to-gray-500 rounded-t-2xl p-6 text-center border-4 border-gray-600 shadow-2xl transform hover:scale-105 transition">
                     <Medal className="w-16 h-16 text-gray-100 mx-auto mb-3 drop-shadow-2xl animate-wiggle" />
                     <p className="text-3xl font-black text-white mb-2" style={{textShadow: '3px 3px 0 #000'}}>
-                      {filteredPlayers[1].nickname}
+                      {filteredPlayers[1].nickname || 'Player'}
                     </p>
                     <p className="text-2xl font-bold text-yellow-300">
                       {calculateStats(filteredPlayers[1]).elo} ELO
@@ -475,7 +566,7 @@ export default function MCSRLeaderboardPro() {
                   <div className="bg-gradient-to-b from-yellow-300 via-yellow-400 to-yellow-500 rounded-t-2xl p-8 text-center border-4 border-yellow-600 shadow-2xl transform hover:scale-110 transition">
                     <Trophy className="w-20 h-20 text-yellow-100 mx-auto mb-4 drop-shadow-2xl animate-bounce" />
                     <p className="text-4xl font-black text-white mb-2" style={{textShadow: '4px 4px 0 #000'}}>
-                      {filteredPlayers[0].nickname}
+                      {filteredPlayers[0].nickname || 'Player'}
                     </p>
                     <p className="text-3xl font-bold text-yellow-900">
                       {calculateStats(filteredPlayers[0]).elo} ELO
@@ -491,7 +582,7 @@ export default function MCSRLeaderboardPro() {
                   <div className="bg-gradient-to-b from-orange-300 via-orange-400 to-orange-500 rounded-t-2xl p-6 text-center border-4 border-orange-600 shadow-2xl transform hover:scale-105 transition">
                     <Medal className="w-16 h-16 text-orange-100 mx-auto mb-3 drop-shadow-2xl animate-wiggle" style={{animationDelay: '100ms'}} />
                     <p className="text-3xl font-black text-white mb-2" style={{textShadow: '3px 3px 0 #000'}}>
-                      {filteredPlayers[2].nickname}
+                      {filteredPlayers[2].nickname || 'Player'}
                     </p>
                     <p className="text-2xl font-bold text-yellow-300">
                       {calculateStats(filteredPlayers[2]).elo} ELO
@@ -517,11 +608,12 @@ export default function MCSRLeaderboardPro() {
               ) : (
                 <div className="space-y-4">
                   {filteredPlayers.map((player, index) => {
-                    const stats = calculateStats(player);
+                    const playerDetail = playerDetails[player.uuid];
+                    const stats = calculateStats(player, playerDetail);
                     const isSelected = selectedPlayer?.uuid === player.uuid;
                     
                     return (
-                                              <div
+                      <div
                         key={player.uuid || index}
                         className="bg-gradient-to-r from-green-800/80 to-emerald-800/80 hover:from-green-700/90 hover:to-emerald-700/90 rounded-2xl p-6 transition-all duration-300 border-4 border-green-600/70 hover:border-green-400 hover:scale-[1.02] backdrop-blur-sm shadow-lg hover:shadow-2xl"
                       >
@@ -553,7 +645,7 @@ export default function MCSRLeaderboardPro() {
                                 className="text-3xl font-black text-white"
                                 style={{textShadow: '3px 3px 0 #000'}}
                               >
-                                {player.nickname || 'Unknown'}
+                                {player.nickname || player.username || 'Unknown'}
                               </h3>
                               <span 
                                 className="px-5 py-2 bg-gradient-to-r from-green-600 to-green-700 rounded-xl text-xl text-white font-black border-3 border-green-800 shadow-xl"
@@ -568,20 +660,27 @@ export default function MCSRLeaderboardPro() {
                             </div>
                             <div className="flex gap-5 text-base text-gray-200 font-bold flex-wrap">
                               <span className="flex items-center gap-2 bg-green-900/50 px-3 py-1 rounded-lg">
-                                <Award className="w-5 h-5 text-green-400" />
-                                {stats.wins}W
+                                <Check className="w-5 h-5 text-green-400" />
+                                {stats.wins} Thắng
                               </span>
                               <span className="flex items-center gap-2 bg-red-900/50 px-3 py-1 rounded-lg">
-                                <Target className="w-5 h-5 text-red-400" />
-                                {stats.loses}L
+                                <XCircle className="w-5 h-5 text-red-400" />
+                                {stats.loses} Thua
                               </span>
-                              <span className="bg-yellow-900/50 px-3 py-1 rounded-lg text-yellow-400">
-                                WR: {stats.winRate}%
+                              <span className="flex items-center gap-2 bg-yellow-900/50 px-3 py-1 rounded-lg">
+                                <Percent className="w-5 h-5 text-yellow-400" />
+                                {stats.winRate}% Win Rate
                               </span>
                               <span className="flex items-center gap-2 bg-blue-900/50 px-3 py-1 rounded-lg">
                                 <TrendingUp className="w-5 h-5 text-blue-400" />
                                 {stats.total} Trận
                               </span>
+                              {stats.kills > 0 && (
+                                <span className="flex items-center gap-2 bg-pink-900/50 px-3 py-1 rounded-lg">
+                                  <Target className="w-5 h-5 text-pink-400" />
+                                  {stats.kills} Kills
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -613,7 +712,7 @@ export default function MCSRLeaderboardPro() {
                             ) : (
                               <div className="space-y-3">
                                 {selectedPlayer.recentMatches.slice(0, 8).map((match, idx) => {
-                                  const isWinner = match.result?.uuid === player.uuid;
+                                  const isWinner = match.result?.uuid === player.uuid || match.winner === player.uuid;
                                   const change = match.changes?.find(c => c.uuid === player.uuid);
                                   
                                   return (
@@ -623,7 +722,7 @@ export default function MCSRLeaderboardPro() {
                                       style={{animationDelay: `${idx * 50}ms`}}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        fetchMatchDetails(match.id);
+                                        fetchMatchDetails(match.id || match.matchId);
                                       }}
                                     >
                                       <div className="flex justify-between items-center">
@@ -648,14 +747,14 @@ export default function MCSRLeaderboardPro() {
                                           </div>
                                           <div className="flex items-center gap-3 text-sm text-gray-300 font-bold">
                                             <Clock className="w-4 h-4" />
-                                            {formatDate(match.date)}
+                                            {formatDate(match.date || match.timestamp)}
                                           </div>
                                         </div>
                                         <div className="flex items-center gap-4">
                                           <div className="text-right">
                                             <p className="text-sm text-gray-400 font-bold">THỜI GIAN</p>
                                             <p className="text-2xl font-black text-yellow-400">
-                                              {formatTime(match.result?.time)}
+                                              {formatTime(match.result?.time || match.time)}
                                             </p>
                                           </div>
                                           <div className="bg-blue-700 p-3 rounded-lg">
@@ -697,20 +796,25 @@ export default function MCSRLeaderboardPro() {
                   Dữ liệu được cập nhật từ API chính thức của MCSR Ranked
                 </p>
                 <p className="text-gray-500 text-sm font-bold mt-2">
-                  Dữ liệu chỉ tính người chơi Việt Nam
+                  API: https://mcsrranked.com/api
                 </p>
               </div>
               
               <div className="flex flex-col items-center md:items-end gap-2">
-                <button 
-                  onClick={fetchLeaderboard}
-                  className="px-8 py-4 bg-gradient-to-r from-green-700 to-emerald-800 hover:from-green-600 hover:to-emerald-700 rounded-xl transition transform hover:scale-105 border-4 border-green-800 shadow-xl flex items-center gap-3 group"
-                >
-                  <Zap className="w-6 h-6 text-yellow-400 animate-pulse group-hover:animate-spin" />
-                  <span className="text-xl font-black text-white">CẬP NHẬT DỮ LIỆU</span>
-                </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="text-gray-400 font-bold">Trực tuyến</span>
+                  </div>
+                  <span className="text-gray-500 font-bold">•</span>
+                  <span className="text-gray-400 font-bold">API Status: ✅</span>
+                </div>
                 <p className="text-gray-500 text-sm font-bold">
-                  Cập nhật lần cuối: {new Date().toLocaleDateString('vi-VN')}
+                  Cập nhật lần cuối: {new Date().toLocaleDateString('vi-VN', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })}
                 </p>
               </div>
             </div>
@@ -719,7 +823,7 @@ export default function MCSRLeaderboardPro() {
       </div>
 
       {/* Floating Scroll to Top */}
-      {window.scrollY > 500 && (
+      {typeof window !== 'undefined' && window.scrollY > 500 && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           className="fixed bottom-8 right-8 z-40 p-4 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-xl border-4 border-yellow-800 shadow-2xl hover:scale-110 transition transform animate-bounce"
@@ -883,4 +987,4 @@ export default function MCSRLeaderboardPro() {
       `}</style>
     </div>
   );
-}
+    }
