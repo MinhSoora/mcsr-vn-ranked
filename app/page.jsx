@@ -2,211 +2,114 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader, Check, XCircle, Percent, Users, Swords, Heart, BarChart3, Calendar, Globe, Crown, Skull, Timer, Hash, Activity, AlertCircle, Flag, MapPin } from 'lucide-react';
 
-export default function MCSRLeaderboardPro() {
-  const [players, setPlayers] = useState([]);
-  const [filteredPlayers, setFilteredPlayers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [selectedMatch, setSelectedMatch] = useState(null);
-  const [playerDetails, setPlayerDetails] = useState({});
-  const [playerMatches, setPlayerMatches] = useState({});
-  const [matchLoading, setMatchLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeSeason, setActiveSeason] = useState('2');
-  const [statsView, setStatsView] = useState('overview');
-  const [playerStatsLoading, setPlayerStatsLoading] = useState({});
+// ==================== API SERVICE ====================
+const API_BASE = 'https://api.mcsrranked.com/api';
 
-  useEffect(() => {
-    fetchLeaderboard();
-  }, []);
-
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredPlayers(players);
-    } else {
-      const filtered = players.filter(player => 
-        (player.nickname || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (player.username || '').toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredPlayers(filtered);
+const apiService = {
+  async fetchWithRetry(url, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (data.status === 'error') throw new Error(data.data || 'API Error');
+        return data;
+      } catch (err) {
+        if (i === retries - 1) throw err;
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+      }
     }
-  }, [searchQuery, players]);
+  },
 
-  const fetchLeaderboard = async () => {
+  async getSeasonInfo() {
     try {
-      setLoading(true);
-      setRefreshing(true);
-      setError(null);
-      
-      // Fetch leaderboard with Vietnamese players only
-      const response = await fetch('https://api.mcsrranked.com/api/leaderboard?country=VN');
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (!result || !result.users) {
-        throw new Error('Invalid response format');
-      }
-      
-      // Only Vietnamese players
-      const vnPlayers = result.users
-        .sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0))
-        .map((player, index) => ({
-          ...player,
-          globalRank: index + 1
-        }));
-      
-      setPlayers(vnPlayers);
-      setFilteredPlayers(vnPlayers);
-      
-      setLoading(false);
-      setRefreshing(false);
+      // Lấy thông tin từ leaderboard để xác định season hiện tại
+      const data = await this.fetchWithRetry(`${API_BASE}/leaderboard?count=1`);
+      // Season có thể lấy từ user đầu tiên hoặc từ metadata
+      return data.data?.season || 2;
     } catch (err) {
-      console.error('Error fetching leaderboard:', err);
-      setError('Không thể tải dữ liệu. Vui lòng thử lại sau.');
-      setLoading(false);
-      setRefreshing(false);
+      console.error('Error getting season:', err);
+      return 2; // fallback
     }
-  };
+  },
 
-  const fetchPlayerDetails = async (uuid) => {
-    if (playerDetails[uuid]) {
-      return playerDetails[uuid];
-    }
+  async getLeaderboard(country = 'VN', type = 2, count = 100) {
+    const data = await this.fetchWithRetry(
+      `${API_BASE}/leaderboard?type=${type}&country=${country}&count=${count}`
+    );
+    return data.data || { users: [] };
+  },
 
-    try {
-      setPlayerStatsLoading(prev => ({ ...prev, [uuid]: true }));
-      
-      const response = await fetch(`https://api.mcsrranked.com/api/users/${uuid}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.status === 'success' && result.data) {
-        const details = result.data;
-        
-        // Fetch statistics for the player
-        let statistics = {};
-        try {
-          const statsResponse = await fetch(`https://api.mcsrranked.com/api/users/${uuid}/statistics`);
-          if (statsResponse.ok) {
-            const statsData = await statsResponse.json();
-            if (statsData.status === 'success' && statsData.data) {
-              statistics = statsData.data;
-            }
-          }
-        } catch (err) {
-          console.log('Could not fetch statistics:', err);
-        }
-        
-        // Fetch season 2 statistics specifically
-        let season2Stats = {};
-        try {
-          const season2Response = await fetch(`https://api.mcsrranked.com/api/users/${uuid}/statistics?season=2`);
-          if (season2Response.ok) {
-            const season2Data = await season2Response.json();
-            if (season2Data.status === 'success' && season2Data.data) {
-              season2Stats = season2Data.data;
-            }
-          }
-        } catch (err) {
-          console.log('Could not fetch season 2 stats:', err);
-        }
-        
-        const fullDetails = { 
-          ...details, 
-          statistics: { ...statistics, season2: season2Stats } 
-        };
-        
-        setPlayerDetails(prev => ({ ...prev, [uuid]: fullDetails }));
-        setPlayerStatsLoading(prev => ({ ...prev, [uuid]: false }));
-        return fullDetails;
-      }
-      
-      setPlayerStatsLoading(prev => ({ ...prev, [uuid]: false }));
-      return null;
-    } catch (err) {
-      console.error('Error fetching player details:', err);
-      setPlayerStatsLoading(prev => ({ ...prev, [uuid]: false }));
-      return null;
-    }
-  };
+  async getUserDetails(uuid) {
+    const data = await this.fetchWithRetry(`${API_BASE}/users/${uuid}`);
+    return data.data;
+  },
 
-  const fetchMatchDetails = async (matchId) => {
-    try {
-      setMatchLoading(true);
-      const response = await fetch(`https://api.mcsrranked.com/api/matches/${matchId}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.status === 'success' && result.data) {
-        setSelectedMatch(result.data);
-      }
-      setMatchLoading(false);
-    } catch (err) {
-      console.error('Error fetching match details:', err);
-      setMatchLoading(false);
-    }
-  };
+  async getUserStats(uuid, season = null) {
+    const url = season 
+      ? `${API_BASE}/users/${uuid}/statistics?season=${season}`
+      : `${API_BASE}/users/${uuid}/statistics`;
+    const data = await this.fetchWithRetry(url);
+    return data.data;
+  },
 
-  const fetchPlayerMatches = async (uuid) => {
-    if (playerMatches[uuid]) {
-      return playerMatches[uuid];
-    }
+  async getUserMatches(uuid, type = 2, count = 15) {
+    const data = await this.fetchWithRetry(
+      `${API_BASE}/users/${uuid}/matches?type=${type}&count=${count}`
+    );
+    return data.data?.data || [];
+  },
 
-    try {
-      // Fetch recent matches (all seasons)
-      const response = await fetch(`https://api.mcsrranked.com/api/users/${uuid}/matches?count=15`);
-      
-      if (!response.ok) {
-        return [];
-      }
-      
-      const result = await response.json();
-      const matches = result.status === 'success' && result.data ? result.data.data || result.data : [];
-      
-      setPlayerMatches(prev => ({ ...prev, [uuid]: matches }));
-      return matches;
-    } catch (err) {
-      console.error('Error fetching player matches:', err);
-      return [];
-    }
-  };
+  async getMatchDetails(matchId) {
+    const data = await this.fetchWithRetry(`${API_BASE}/matches/${matchId}`);
+    return data.data;
+  }
+};
 
-  const formatTime = (ms) => {
+// ==================== UTILITY FUNCTIONS ====================
+const utils = {
+  formatTime(ms) {
     if (!ms && ms !== 0) return 'N/A';
     const totalSeconds = ms / 1000;
     const mins = Math.floor(totalSeconds / 60);
     const secs = Math.floor(totalSeconds % 60);
     const milliseconds = Math.floor(ms % 1000);
     return `${mins}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
-  };
+  },
 
-  const formatDate = (timestamp) => {
+  formatDate(timestamp) {
     if (!timestamp) return 'N/A';
     const date = new Date(timestamp * 1000);
-    return date.toLocaleDateString('vi-VN', { 
-      year: 'numeric', 
-      month: 'short', 
+    return date.toLocaleDateString('vi-VN', {
+      year: 'numeric',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     });
-  };
+  },
 
-  const getTimelineIcon = (type) => {
+  getCountryFlag(code) {
+    const flags = {
+      'vn': '🇻🇳', 'us': '🇺🇸', 'gb': '🇬🇧', 'ca': '🇨🇦',
+      'au': '🇦🇺', 'de': '🇩🇪', 'fr': '🇫🇷', 'jp': '🇯🇵',
+      'kr': '🇰🇷', 'cn': '🇨🇳'
+    };
+    return flags[code?.toLowerCase()] || '🌐';
+  },
+
+  getPlayerAvatar(uuid, size = 80) {
+    return `https://crafatar.com/avatars/${uuid}?size=${size}&overlay`;
+  },
+
+  getRankIcon(rank) {
+    if (rank === 1) return <Trophy className="w-10 h-10 text-yellow-400 drop-shadow-2xl animate-pulse" />;
+    if (rank === 2) return <Medal className="w-10 h-10 text-gray-300 drop-shadow-xl" />;
+    if (rank === 3) return <Medal className="w-10 h-10 text-orange-400 drop-shadow-xl" />;
+    return <span className="text-2xl font-black text-white drop-shadow-lg">#{rank}</span>;
+  },
+
+  getTimelineIcon(type) {
     const icons = {
       'enter_nether': <Flame className="w-4 h-4 text-red-500" />,
       'enter_bastion': <Target className="w-4 h-4 text-orange-500" />,
@@ -220,9 +123,9 @@ export default function MCSRLeaderboardPro() {
       'death': <Skull className="w-4 h-4 text-gray-600" />
     };
     return icons[type] || <Clock className="w-4 h-4 text-blue-500" />;
-  };
+  },
 
-  const getTimelineLabel = (type) => {
+  getTimelineLabel(type) {
     const labels = {
       'enter_nether': 'Vào Nether',
       'enter_bastion': 'Vào Bastion',
@@ -236,286 +139,516 @@ export default function MCSRLeaderboardPro() {
       'death': 'Bị hạ gục'
     };
     return labels[type] || type;
-  };
+  }
+};
 
-  const getRankIcon = (rank) => {
-    if (rank === 1) return <Trophy className="w-10 h-10 text-yellow-400 drop-shadow-2xl animate-pulse" />;
-    if (rank === 2) return <Medal className="w-10 h-10 text-gray-300 drop-shadow-xl" />;
-    if (rank === 3) return <Medal className="w-10 h-10 text-orange-400 drop-shadow-xl" />;
-    return <span className="text-2xl font-black text-white drop-shadow-lg">#{rank}</span>;
-  };
+// ==================== STATS CALCULATOR ====================
+const calculateStats = (player, detailedStats = null) => {
+  const stats = detailedStats || player.statistics || {};
+  const wins = stats.win || stats.wins || 0;
+  const loses = stats.lose || stats.losses || 0;
+  const total = wins + loses;
+  const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
 
-  const calculateStats = (player, playerDetail = null) => {
-    // Sử dụng dữ liệu từ playerDetails nếu có
-    if (playerDetail && playerDetail.statistics) {
-      const stats = playerDetail.statistics.season2 || playerDetail.statistics;
-      const wins = stats.win || stats.wins || 0;
-      const loses = stats.lose || stats.losses || 0;
-      const total = wins + loses;
-      const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
-      
-      return {
-        wins,
-        loses,
-        total,
-        winRate,
-        elo: Math.round(player.eloRate || 0),
-        highestElo: Math.round(player.highestEloRate || player.eloRate || 0),
-        rank: player.eloRank || player.position || 0,
-        kills: stats.kills || 0,
-        deaths: stats.deaths || 0,
-        assists: stats.assists || 0,
-        matches: total,
-        averageTime: stats.average_time || 0,
-        fastestWin: stats.fastest_win || 0,
-        longestWin: stats.longest_win || 0,
-        playtime: stats.playtime || 0
-      };
+  return {
+    wins,
+    loses,
+    total,
+    winRate,
+    elo: Math.round(player.eloRate || 0),
+    highestElo: Math.round(player.highestEloRate || player.eloRate || 0),
+    rank: player.eloRank || 0,
+    kills: stats.kills || 0,
+    deaths: stats.deaths || 0,
+    assists: stats.assists || 0,
+    matches: total,
+    averageTime: stats.average_time || 0,
+    fastestWin: stats.fastest_win || 0,
+    longestWin: stats.longest_win || 0,
+    playtime: stats.playtime || 0
+  };
+};
+
+// ==================== STAT CARD COMPONENT ====================
+const StatCard = ({ icon, label, value, color }) => (
+  <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700">
+    <div className="flex items-center gap-2 mb-1">
+      {icon}
+      <span className="text-xs text-gray-400 font-bold">{label}</span>
+    </div>
+    <p className={`text-2xl font-black text-${color}-400`}>{value}</p>
+  </div>
+);
+
+// ==================== MATCH CARD COMPONENT ====================
+const MatchCard = ({ match, playerUuid, onMatchClick }) => {
+  const isWinner = match.result?.uuid === playerUuid || match.winner === playerUuid;
+  const change = match.changes?.find(c => c.uuid === playerUuid);
+
+  return (
+    <div
+      className={`bg-gradient-to-r ${
+        isWinner
+          ? 'from-green-900/60 to-green-800/60 border-green-500'
+          : 'from-red-900/60 to-red-800/60 border-red-500'
+      } rounded-xl p-4 border-2 backdrop-blur-sm hover:scale-105 transition cursor-pointer shadow-lg`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onMatchClick(match.id || match.matchId);
+      }}
+    >
+      <div className="flex justify-between items-center">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2 flex-wrap">
+            {isWinner ? (
+              <div className="flex items-center gap-2 bg-green-700 px-3 py-1 rounded-lg">
+                <Trophy className="w-4 h-4 text-yellow-400" />
+                <span className="text-sm font-bold text-white">THẮNG</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-red-700 px-3 py-1 rounded-lg">
+                <X className="w-4 h-4 text-red-300" />
+                <span className="text-sm font-bold text-white">THUA</span>
+              </div>
+            )}
+            {change && (
+              <span
+                className={`text-sm font-bold px-3 py-1 rounded-lg ${
+                  (change.change || 0) >= 0
+                    ? 'bg-green-700 text-green-300'
+                    : 'bg-red-700 text-red-300'
+                }`}
+              >
+                {(change.change || 0) >= 0 ? '+' : ''}
+                {change.change || 0} ELO
+              </span>
+            )}
+            <span className="text-xs text-gray-400">
+              Season {match.season || 'N/A'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-300">
+            <Calendar className="w-3 h-3" />
+            {utils.formatDate(match.date || match.timestamp)}
+            {match.type && (
+              <>
+                <span className="mx-1">•</span>
+                <span className="text-yellow-400">
+                  {match.type === 2 ? 'Ranked' : 'Casual'}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Thời gian</p>
+            <p className="text-lg font-bold text-yellow-400">
+              {utils.formatTime(match.result?.time || match.time)}
+            </p>
+          </div>
+          <div className="bg-blue-700 p-2 rounded-lg">
+            <Eye className="w-5 h-5 text-blue-300" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== PLAYER STATS VIEW ====================
+const PlayerStatsView = ({ player, stats, statsView, matches, onMatchClick }) => {
+  switch (statsView) {
+    case 'overview':
+      return (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard
+            icon={<Check className="w-5 h-5 text-green-400" />}
+            label="Thắng"
+            value={stats.wins}
+            color="green"
+          />
+          <StatCard
+            icon={<XCircle className="w-5 h-5 text-red-400" />}
+            label="Thua"
+            value={stats.loses}
+            color="red"
+          />
+          <StatCard
+            icon={<Percent className="w-5 h-5 text-yellow-400" />}
+            label="Win Rate"
+            value={`${stats.winRate}%`}
+            color="yellow"
+          />
+          <StatCard
+            icon={<Target className="w-5 h-5 text-purple-400" />}
+            label="K/D"
+            value={
+              stats.deaths > 0
+                ? (stats.kills / stats.deaths).toFixed(2)
+                : stats.kills.toFixed(0)
+            }
+            color="purple"
+          />
+        </div>
+      );
+
+    case 'detailed':
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <StatCard
+              icon={<Swords className="w-5 h-5 text-red-500" />}
+              label="Kills"
+              value={stats.kills}
+              color="red"
+            />
+            <StatCard
+              icon={<Skull className="w-5 h-5 text-gray-400" />}
+              label="Deaths"
+              value={stats.deaths}
+              color="gray"
+            />
+            <StatCard
+              icon={<Users className="w-5 h-5 text-blue-400" />}
+              label="Assists"
+              value={stats.assists}
+              color="blue"
+            />
+            <StatCard
+              icon={<Timer className="w-5 h-5 text-green-500" />}
+              label="TB Trung bình"
+              value={utils.formatTime(stats.averageTime)}
+              color="green"
+            />
+            <StatCard
+              icon={<Zap className="w-5 h-5 text-yellow-500" />}
+              label="Nhanh nhất"
+              value={utils.formatTime(stats.fastestWin)}
+              color="yellow"
+            />
+            <StatCard
+              icon={<Clock className="w-5 h-5 text-orange-500" />}
+              label="Lâu nhất"
+              value={utils.formatTime(stats.longestWin)}
+              color="orange"
+            />
+          </div>
+        </div>
+      );
+
+    case 'matches':
+      return matches && matches.length > 0 ? (
+        <div className="space-y-3">
+          {matches.slice(0, 10).map((match, idx) => (
+            <MatchCard
+              key={idx}
+              match={match}
+              playerUuid={player.uuid}
+              onMatchClick={onMatchClick}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8">
+          <Loader className="w-10 h-10 text-green-400 mx-auto mb-3 animate-spin" />
+          <p className="text-gray-400 font-bold">Đang tải trận đấu...</p>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+};
+
+// ==================== MATCH DETAILS MODAL ====================
+const MatchDetailsModal = ({ match, onClose }) => {
+  if (!match) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-fade-in">
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-4 border-green-600 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
+        <div className="sticky top-0 bg-gradient-to-r from-green-700 to-emerald-700 border-b-4 border-green-900 p-6 flex justify-between items-center">
+          <h2
+            className="text-4xl font-black text-yellow-400 flex items-center gap-3"
+            style={{ textShadow: '3px 3px 0 #000' }}
+          >
+            <Trophy className="w-10 h-10" />
+            THÔNG TIN TRẬN ĐẤU
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-3 bg-red-600 hover:bg-red-700 rounded-xl transition transform hover:scale-110 shadow-lg"
+          >
+            <X className="w-7 h-7 text-white" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-100px)]">
+          {/* Match Info */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-gradient-to-br from-green-700/50 to-green-900/50 rounded-xl p-5 border-2 border-green-500">
+              <div className="flex items-center gap-2 mb-2">
+                <Calendar className="w-5 h-5 text-green-400" />
+                <p className="text-sm text-green-300 font-bold">NGÀY GIỜ</p>
+              </div>
+              <p className="text-xl font-black text-white">
+                {utils.formatDate(match.date)}
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-yellow-700/50 to-yellow-900/50 rounded-xl p-5 border-2 border-yellow-500">
+              <div className="flex items-center gap-2 mb-2">
+                <Timer className="w-5 h-5 text-yellow-400" />
+                <p className="text-sm text-yellow-300 font-bold">THỜI GIAN</p>
+              </div>
+              <p className="text-2xl font-black text-yellow-400">
+                {utils.formatTime(match.result?.time || match.time)}
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-purple-700/50 to-purple-900/50 rounded-xl p-5 border-2 border-purple-500">
+              <div className="flex items-center gap-2 mb-2">
+                <Hash className="w-5 h-5 text-purple-400" />
+                <p className="text-sm text-purple-300 font-bold">MÙA</p>
+              </div>
+              <p className="text-xl font-black text-white">
+                Season {match.season || 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          {/* Players */}
+          <div>
+            <h3 className="text-2xl font-black text-green-400 mb-4 flex items-center gap-2">
+              <Users className="w-7 h-7" />
+              NGƯỜI CHƠI
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {match.players?.map((p, idx) => {
+                const isWinner = match.result?.uuid === p.uuid;
+                const change = match.changes?.find((c) => c.uuid === p.uuid);
+                return (
+                  <div
+                    key={idx}
+                    className={`bg-gradient-to-r ${
+                      isWinner
+                        ? 'from-yellow-900/50 to-yellow-700/50 border-yellow-500'
+                        : 'from-gray-800/50 to-gray-700/50 border-gray-600'
+                    } rounded-xl p-4 border-2 backdrop-blur-sm transform transition hover:scale-105`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        {isWinner && (
+                          <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />
+                        )}
+                        <img
+                          src={utils.getPlayerAvatar(p.uuid, 40)}
+                          alt={p.nickname}
+                          className="w-10 h-10 rounded-lg border-2 border-green-500"
+                          onError={(e) => {
+                            e.target.src = utils.getPlayerAvatar('8667ba71b85a4004af54457a9734eed7', 40);
+                          }}
+                        />
+                        <div>
+                          <p className="text-lg font-black text-white">
+                            {p.nickname || p.username || 'Unknown'}
+                          </p>
+                          <p className="text-xs text-gray-400 font-bold">
+                            {p.uuid?.slice(0, 8)}...
+                          </p>
+                        </div>
+                      </div>
+                      {change && (
+                        <div className="text-right">
+                          <p
+                            className={`text-xl font-black ${
+                              (change.change || 0) >= 0
+                                ? 'text-green-400'
+                                : 'text-red-400'
+                            }`}
+                          >
+                            {(change.change || 0) >= 0 ? '+' : ''}
+                            {change.change || 0}
+                          </p>
+                          <p className="text-sm font-bold text-yellow-400">
+                            {change.eloRate || 0} ELO
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Timelines */}
+          {match.timelines && match.timelines.length > 0 && (
+            <div>
+              <h3 className="text-2xl font-black text-blue-400 mb-4 flex items-center gap-2">
+                <Activity className="w-7 h-7" />
+                TIMELINE
+              </h3>
+              <div className="space-y-4">
+                {match.players?.map((player) => {
+                  const playerTimelines = match.timelines.filter(
+                    (t) => t.uuid === player.uuid
+                  );
+                  if (playerTimelines.length === 0) return null;
+
+                  return (
+                    <div
+                      key={player.uuid}
+                      className="bg-gradient-to-br from-blue-900/50 to-blue-700/50 rounded-xl p-5 border-2 border-blue-500"
+                    >
+                      <p className="text-xl font-black text-white mb-4 flex items-center gap-2">
+                        <img
+                          src={utils.getPlayerAvatar(player.uuid, 30)}
+                          alt={player.nickname}
+                          className="w-8 h-8 rounded-lg"
+                        />
+                        {player.nickname || player.username}
+                      </p>
+                      <div className="space-y-2">
+                        {playerTimelines
+                          .sort((a, b) => a.time - b.time)
+                          .map((timeline, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg border border-blue-700/50"
+                            >
+                              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
+                                {utils.getTimelineIcon(timeline.type)}
+                              </div>
+                              <span className="flex-1 text-base font-bold text-gray-200">
+                                {utils.getTimelineLabel(timeline.type)}
+                              </span>
+                              <span className="text-lg font-black text-blue-400">
+                                {utils.formatTime(timeline.time)}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==================== MAIN APP ====================
+export default function MCSRLeaderboardPro() {
+  const [players, setPlayers] = useState([]);
+  const [filteredPlayers, setFilteredPlayers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [currentSeason, setCurrentSeason] = useState(2);
+  const [statsView, setStatsView] = useState('overview');
+  const [playerData, setPlayerData] = useState({});
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredPlayers(players);
+    } else {
+      const filtered = players.filter(
+        (player) =>
+          (player.nickname || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (player.username || '').toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredPlayers(filtered);
     }
-    
-    // Fallback từ dữ liệu player cơ bản
-    const stats = player.statistics || {};
-    const wins = stats.win || stats.wins || 0;
-    const loses = stats.lose || stats.losses || 0;
-    const total = wins + loses;
-    const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
-    
-    return {
-      wins,
-      loses,
-      total,
-      winRate,
-      elo: Math.round(player.eloRate || 0),
-      highestElo: Math.round(player.highestEloRate || player.eloRate || 0),
-      rank: player.eloRank || player.position || 0,
-      kills: stats.kills || 0,
-      deaths: stats.deaths || 0,
-      assists: stats.assists || 0,
-      matches: total,
-      averageTime: stats.average_time || 0,
-      fastestWin: stats.fastest_win || 0,
-      longestWin: stats.longest_win || 0,
-      playtime: stats.playtime || 0
-    };
-  };
+  }, [searchQuery, players]);
 
-  const getCountryFlag = (countryCode) => {
-    const flags = {
-      'VN': '🇻🇳',
-      'US': '🇺🇸',
-      'GB': '🇬🇧',
-      'CA': '🇨🇦',
-      'AU': '🇦🇺',
-      'DE': '🇩🇪',
-      'FR': '🇫🇷',
-      'JP': '🇯🇵',
-      'KR': '🇰🇷',
-      'CN': '🇨🇳'
-    };
-    return flags[countryCode] || '🌐';
+  const fetchLeaderboard = async () => {
+    try {
+      setLoading(true);
+      setRefreshing(true);
+      setError(null);
+
+      // Lấy season hiện tại
+      const season = await apiService.getSeasonInfo();
+      setCurrentSeason(season);
+
+      // Lấy leaderboard Việt Nam
+      const result = await apiService.getLeaderboard('VN', 2, 100);
+      const vnPlayers = (result.users || [])
+        .sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0))
+        .map((player, index) => ({
+          ...player,
+          globalRank: index + 1
+        }));
+
+      setPlayers(vnPlayers);
+      setFilteredPlayers(vnPlayers);
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+      setError('Không thể tải dữ liệu. Vui lòng thử lại sau.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   const handlePlayerClick = async (player) => {
     if (selectedPlayer?.uuid === player.uuid) {
       setSelectedPlayer(null);
       setStatsView('overview');
-    } else {
-      setSelectedPlayer({ ...player, recentMatches: [], details: null });
-      setStatsView('overview');
-      
-      // Fetch player details và matches song song
-      const [details, matches] = await Promise.all([
-        fetchPlayerDetails(player.uuid),
-        fetchPlayerMatches(player.uuid)
+      return;
+    }
+
+    setSelectedPlayer({ ...player, loading: true });
+    setStatsView('overview');
+
+    try {
+      const [details, stats, matches] = await Promise.all([
+        apiService.getUserDetails(player.uuid),
+        apiService.getUserStats(player.uuid, currentSeason),
+        apiService.getUserMatches(player.uuid, 2, 15)
       ]);
-      
-      setSelectedPlayer(prev => prev?.uuid === player.uuid ? { 
-        ...player, 
-        recentMatches: matches,
-        details
-      } : prev);
+
+      setPlayerData((prev) => ({
+        ...prev,
+        [player.uuid]: { details, stats, matches }
+      }));
+
+      setSelectedPlayer({
+        ...player,
+        loading: false,
+        details,
+        stats,
+        matches
+      });
+    } catch (err) {
+      console.error('Error fetching player data:', err);
+      setSelectedPlayer(null);
     }
   };
 
-  const renderPlayerStats = (player, stats) => {
-    const playerDetail = selectedPlayer?.details;
-    
-    switch (statsView) {
-      case 'overview':
-        return (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard 
-              icon={<Check className="w-5 h-5 text-green-400" />}
-              label="Thắng"
-              value={stats.wins}
-              color="green"
-            />
-            <StatCard 
-              icon={<XCircle className="w-5 h-5 text-red-400" />}
-              label="Thua"
-              value={stats.loses}
-              color="red"
-            />
-            <StatCard 
-              icon={<Percent className="w-5 h-5 text-yellow-400" />}
-              label="Win Rate"
-              value={`${stats.winRate}%`}
-              color="yellow"
-            />
-            <StatCard 
-              icon={<Target className="w-5 h-5 text-purple-400" />}
-              label="K/D"
-              value={stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills.toFixed(0)}
-              color="purple"
-            />
-          </div>
-        );
-      
-      case 'detailed':
-        return (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <StatCard 
-                icon={<Swords className="w-5 h-5 text-red-500" />}
-                label="Kills"
-                value={stats.kills}
-                color="red"
-              />
-              <StatCard 
-                icon={<Skull className="w-5 h-5 text-gray-400" />}
-                label="Deaths"
-                value={stats.deaths}
-                color="gray"
-              />
-              <StatCard 
-                icon={<Users className="w-5 h-5 text-blue-400" />}
-                label="Assists"
-                value={stats.assists}
-                color="blue"
-              />
-              <StatCard 
-                icon={<Timer className="w-5 h-5 text-green-500" />}
-                label="Thời gian trung bình"
-                value={formatTime(stats.averageTime)}
-                color="green"
-              />
-              <StatCard 
-                icon={<Zap className="w-5 h-5 text-yellow-500" />}
-                label="Thắng nhanh nhất"
-                value={formatTime(stats.fastestWin)}
-                color="yellow"
-              />
-              <StatCard 
-                icon={<Clock className="w-5 h-5 text-orange-500" />}
-                label="Thắng lâu nhất"
-                value={formatTime(stats.longestWin)}
-                color="orange"
-              />
-            </div>
-            
-            {playerDetail && playerDetail.statistics && (
-              <div className="mt-4 p-4 bg-gray-900/50 rounded-xl border border-gray-700">
-                <h5 className="text-lg font-bold text-gray-300 mb-2">Chi tiết thống kê:</h5>
-                <pre className="text-xs text-gray-400 overflow-auto max-h-40">
-                  {JSON.stringify(playerDetail.statistics, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        );
-      
-      case 'matches':
-        return selectedPlayer?.recentMatches?.length > 0 ? (
-          <div className="space-y-3">
-            {selectedPlayer.recentMatches.slice(0, 10).map((match, idx) => {
-              const isWinner = match.result?.uuid === player.uuid || match.winner === player.uuid;
-              const change = match.changes?.find(c => c.uuid === player.uuid);
-              
-              return (
-                <div 
-                  key={idx}
-                  className={`bg-gradient-to-r ${isWinner ? 'from-green-900/60 to-green-800/60 border-green-500' : 'from-red-900/60 to-red-800/60 border-red-500'} rounded-xl p-4 border-2 backdrop-blur-sm hover:scale-105 transition cursor-pointer shadow-lg`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fetchMatchDetails(match.id || match.matchId);
-                  }}
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        {isWinner ? (
-                          <div className="flex items-center gap-2 bg-green-700 px-3 py-1 rounded-lg">
-                            <Trophy className="w-4 h-4 text-yellow-400" />
-                            <span className="text-sm font-bold text-white">THẮNG</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 bg-red-700 px-3 py-1 rounded-lg">
-                            <X className="w-4 h-4 text-red-300" />
-                            <span className="text-sm font-bold text-white">THUA</span>
-                          </div>
-                        )}
-                        {change && (
-                          <span className={`text-sm font-bold px-3 py-1 rounded-lg ${(change.change || 0) >= 0 ? 'bg-green-700 text-green-300' : 'bg-red-700 text-red-300'}`}>
-                            {(change.change || 0) >= 0 ? '+' : ''}{change.change || 0} ELO
-                          </span>
-                        )}
-                        <span className="text-xs text-gray-400">
-                          Season {match.season || 'N/A'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-300">
-                        <Calendar className="w-3 h-3" />
-                        {formatDate(match.date || match.timestamp)}
-                        {match.game_type && (
-                          <>
-                            <span className="mx-1">•</span>
-                            <span className="text-yellow-400">{match.game_type}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400">Thời gian</p>
-                        <p className="text-lg font-bold text-yellow-400">
-                          {formatTime(match.result?.time || match.time)}
-                        </p>
-                      </div>
-                      <div className="bg-blue-700 p-2 rounded-lg">
-                        <Eye className="w-5 h-5 text-blue-300" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <Loader className="w-10 h-10 text-green-400 mx-auto mb-3 animate-spin" />
-            <p className="text-gray-400 font-bold">Đang tải trận đấu...</p>
-          </div>
-        );
-      
-      default:
-        return null;
+  const handleMatchClick = async (matchId) => {
+    try {
+      const matchDetails = await apiService.getMatchDetails(matchId);
+      setSelectedMatch(matchDetails);
+    } catch (err) {
+      console.error('Error fetching match details:', err);
     }
   };
-
-  const StatCard = ({ icon, label, value, color }) => (
-    <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700">
-      <div className="flex items-center gap-2 mb-1">
-        {icon}
-        <span className="text-xs text-gray-400 font-bold">{label}</span>
-      </div>
-      <p className={`text-2xl font-black text-${color}-400`}>{value}</p>
-    </div>
-  );
 
   if (loading) {
     return (
       <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
-        <div 
+        <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
           style={{
             backgroundImage: 'url(https://wallpapercave.com/wp/wp2571595.png)',
@@ -529,10 +662,15 @@ export default function MCSRLeaderboardPro() {
               <div className="absolute inset-0 border-8 border-green-500/30 rounded-2xl"></div>
               <div className="absolute inset-0 border-8 border-green-400 border-t-transparent rounded-2xl animate-spin"></div>
             </div>
-            <p className="text-white text-4xl font-black tracking-wider animate-pulse" style={{textShadow: '4px 4px 0 #000, 0 0 20px #4ade80'}}>
+            <p
+              className="text-white text-4xl font-black tracking-wider animate-pulse"
+              style={{ textShadow: '4px 4px 0 #000, 0 0 20px #4ade80' }}
+            >
               ĐANG TẢI...
             </p>
-            <p className="text-green-400 text-xl font-bold mt-4">Đang lấy dữ liệu từ MCSR Ranked</p>
+            <p className="text-green-400 text-xl font-bold mt-4">
+              Đang lấy dữ liệu từ MCSR Ranked
+            </p>
           </div>
         </div>
       </div>
@@ -542,15 +680,16 @@ export default function MCSRLeaderboardPro() {
   if (error) {
     return (
       <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-red-900 to-gray-900">
-        <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
-          <div className="bg-red-900/90 border-4 border-red-600 rounded-2xl p-8 text-white backdrop-blur-lg shadow-2xl max-w-md w-full">
-            <div className="text-center mb-6">
-              <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-4" />
-              <p className="text-3xl font-black mb-2">{error}</p>
-            </div>
-            <button 
+        <div className="relative z-10 flex items-center justify-center min-h-screen">
+          <div className="text-center p-8 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border-4 border-red-500 shadow-2xl">
+            <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
+            <h2 className="text-4xl font-black text-white mb-4" style={{ textShadow: '2px 2px 0 #000' }}>
+              LỖI TẢI DỮ LIỆU
+            </h2>
+            <p className="text-xl text-gray-300 mb-6 max-w-lg">{error}</p>
+            <button
               onClick={fetchLeaderboard}
-              className="w-full px-8 py-4 bg-red-600 hover:bg-red-700 rounded-xl transition font-black border-4 border-red-800 text-xl shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="px-8 py-4 bg-gradient-to-r from-red-600 to-orange-600 rounded-xl text-white font-black text-lg hover:scale-105 transition transform shadow-lg"
             >
               THỬ LẠI
             </button>
@@ -561,719 +700,446 @@ export default function MCSRLeaderboardPro() {
   }
 
   return (
-    <div className="min-h-screen relative bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
-      {/* Animated Background */}
-      <div 
-        className="fixed inset-0 bg-cover bg-center bg-no-repeat opacity-20"
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
+      {/* Background */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-10"
         style={{
           backgroundImage: 'url(https://wallpapercave.com/wp/wp2571595.png)',
-          animation: 'float 20s ease-in-out infinite'
+          filter: 'blur(4px)',
+          transform: 'scale(1.05)'
         }}
       />
-      <div className="fixed inset-0 bg-gradient-to-b from-transparent via-black/50 to-black/70" />
-      
-      {/* Match Details Modal */}
-      {selectedMatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-fade-in">
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-4 border-green-600 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="sticky top-0 bg-gradient-to-r from-green-700 to-emerald-700 border-b-4 border-green-900 p-6 flex justify-between items-center">
-              <h2 className="text-4xl font-black text-yellow-400 flex items-center gap-3" style={{textShadow: '3px 3px 0 #000'}}>
-                <Trophy className="w-10 h-10" />
-                THÔNG TIN TRẬN ĐẤU
-              </h2>
-              <button 
-                onClick={() => setSelectedMatch(null)}
-                className="p-3 bg-red-600 hover:bg-red-700 rounded-xl transition transform hover:scale-110 shadow-lg"
-              >
-                <X className="w-7 h-7 text-white" />
-              </button>
-            </div>
 
-            <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-100px)]">
-              {/* Match Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gradient-to-br from-green-700/50 to-green-900/50 rounded-xl p-5 border-2 border-green-500 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-5 h-5 text-green-400" />
-                    <p className="text-sm text-green-300 font-bold">NGÀY GIỜ</p>
-                  </div>
-                  <p className="text-xl font-black text-white">{formatDate(selectedMatch.date)}</p>
-                </div>
-                <div className="bg-gradient-to-br from-yellow-700/50 to-yellow-900/50 rounded-xl p-5 border-2 border-yellow-500 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Timer className="w-5 h-5 text-yellow-400" />
-                    <p className="text-sm text-yellow-300 font-bold">THỜI GIAN</p>
-                  </div>
+      {/* Main Content */}
+      <div className="relative z-10 container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <div className="flex flex-col items-center gap-4 mb-6">
+            <div className="flex items-center justify-center gap-4">
+              <Trophy className="w-16 h-16 text-yellow-400 drop-shadow-2xl" />
+              <h1
+                className="text-5xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 via-green-400 to-yellow-400"
+                style={{ textShadow: '4px 4px 0 #000, 0 0 30px rgba(74, 222, 128, 0.5)' }}
+              >
+                MCSR VIỆT NAM
+              </h1>
+              <Trophy className="w-16 h-16 text-yellow-400 drop-shadow-2xl" />
+            </div>
+            <p className="text-xl text-green-300 font-bold flex items-center gap-2">
+              <Globe className="w-5 h-5" />
+              LEADERBOARD SEASON {currentSeason}
+              <span className="bg-green-700 px-3 py-1 rounded-lg text-white text-sm ml-2">
+                {players.length} NGƯỜI CHƠI
+              </span>
+            </p>
+          </div>
+
+          {/* Stats Bar */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-gradient-to-br from-green-800/60 to-green-900/60 rounded-xl p-4 border-2 border-green-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-green-300 font-bold">TOP 1 ELO</p>
                   <p className="text-2xl font-black text-yellow-400">
-                    {formatTime(selectedMatch.result?.time || selectedMatch.time)}
+                    {players[0]?.eloRate?.toFixed(0) || 0}
                   </p>
                 </div>
-                <div className="bg-gradient-to-br from-purple-700/50 to-purple-900/50 rounded-xl p-5 border-2 border-purple-500 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Hash className="w-5 h-5 text-purple-400" />
-                    <p className="text-sm text-purple-300 font-bold">MÙA</p>
-                  </div>
-                  <p className="text-xl font-black text-white">Season {selectedMatch.season || 'N/A'}</p>
-                </div>
+                <Crown className="w-8 h-8 text-yellow-400" />
               </div>
-
-              {/* Players */}
-              <div>
-                <h3 className="text-2xl font-black text-green-400 mb-4 flex items-center gap-2">
-                  <Users className="w-7 h-7" />
-                  NGƯỜI CHƠI
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {selectedMatch.players?.map((p, idx) => {
-                    const isWinner = selectedMatch.result?.uuid === p.uuid || selectedMatch.winner === p.uuid;
-                    const change = selectedMatch.changes?.find(c => c.uuid === p.uuid);
-                    
-                    return (
-                      <div key={idx} className={`bg-gradient-to-r ${isWinner ? 'from-yellow-900/50 to-yellow-700/50 border-yellow-500' : 'from-gray-800/50 to-gray-700/50 border-gray-600'} rounded-xl p-4 border-2 backdrop-blur-sm transform transition hover:scale-105`}>
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-3">
-                            {isWinner && <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />}
-                            <img 
-                              src={`https://crafatar.com/avatars/${p.uuid}?size=40&overlay`}
-                              alt={p.nickname}
-                              className="w-10 h-10 rounded-lg border-2 border-green-500"
-                              onError={(e) => {
-                                e.target.src = 'https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7?size=40&overlay';
-                              }}
-                            />
-                            <div>
-                              <p className="text-lg font-black text-white">{p.nickname || p.username || 'Unknown'}</p>
-                              <p className="text-xs text-gray-400 font-bold">UUID: {p.uuid?.slice(0, 8) || 'N/A'}...</p>
-                            </div>
-                          </div>
-                          {change && (
-                            <div className="text-right">
-                              <p className={`text-xl font-black ${(change.change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                {(change.change || 0) >= 0 ? '+' : ''}{change.change || 0}
-                              </p>
-                              <p className="text-sm font-bold text-yellow-400">{change.eloRate || 0} ELO</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+            </div>
+            <div className="bg-gradient-to-br from-blue-800/60 to-blue-900/60 rounded-xl p-4 border-2 border-blue-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-blue-300 font-bold">TRUNG BÌNH</p>
+                  <p className="text-2xl font-black text-blue-400">
+                    {players.length > 0
+                      ? Math.round(players.reduce((sum, p) => sum + (p.eloRate || 0), 0) / players.length)
+                      : 0}
+                  </p>
                 </div>
+                <BarChart3 className="w-8 h-8 text-blue-400" />
               </div>
-
-              {/* Completions */}
-              {selectedMatch.completions && selectedMatch.completions.length > 0 && (
+            </div>
+            <div className="bg-gradient-to-br from-purple-800/60 to-purple-900/60 rounded-xl p-4 border-2 border-purple-500">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-black text-purple-400 mb-4 flex items-center gap-2">
-                    <Award className="w-7 h-7" />
-                    HOÀN THÀNH
-                  </h3>
-                  <div className="space-y-2">
-                    {selectedMatch.completions.map((comp, idx) => {
-                      const player = selectedMatch.players?.find(p => p.uuid === comp.uuid);
-                      return (
-                        <div key={idx} className="bg-gradient-to-r from-purple-900/50 to-purple-700/50 rounded-xl p-4 border-2 border-purple-500 backdrop-blur-sm flex justify-between items-center">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center">
-                              <span className="text-xl font-black text-white">#{idx + 1}</span>
-                            </div>
-                            <span className="text-lg font-bold text-white">{player?.nickname || player?.username}</span>
-                          </div>
-                          <span className="text-2xl font-black text-purple-400">{formatTime(comp.time)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <p className="text-sm text-purple-300 font-bold">TOP 100</p>
+                  <p className="text-2xl font-black text-purple-400">
+                    {Math.min(players.length, 100)}
+                  </p>
                 </div>
-              )}
-
-              {/* Timelines */}
-              {selectedMatch.timelines && selectedMatch.timelines.length > 0 && (
+                <TrendingUp className="w-8 h-8 text-purple-400" />
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-orange-800/60 to-orange-900/60 rounded-xl p-4 border-2 border-orange-500">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-black text-blue-400 mb-4 flex items-center gap-2">
-                    <Activity className="w-7 h-7" />
-                    TIMELINE
-                  </h3>
-                  <div className="space-y-4">
-                    {selectedMatch.players?.map((player) => {
-                      const playerTimelines = selectedMatch.timelines.filter(t => t.uuid === player.uuid);
-                      if (playerTimelines.length === 0) return null;
-                      
-                      return (
-                        <div key={player.uuid} className="bg-gradient-to-br from-blue-900/50 to-blue-700/50 rounded-xl p-5 border-2 border-blue-500 backdrop-blur-sm">
-                          <p className="text-xl font-black text-white mb-4 flex items-center gap-2">
-                            <img 
-                              src={`https://crafatar.com/avatars/${player.uuid}?size=30&overlay`}
-                              alt={player.nickname}
-                              className="w-8 h-8 rounded-lg"
-                            />
-                            {player.nickname || player.username}
-                          </p>
-                          <div className="space-y-2">
-                            {playerTimelines.sort((a, b) => a.time - b.time).map((timeline, idx) => (
-                              <div 
-                                key={idx}
-                                className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg border border-blue-700/50"
-                              >
-                                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
-                                  {getTimelineIcon(timeline.type)}
-                                </div>
-                                <span className="flex-1 text-base font-bold text-gray-200">
-                                  {getTimelineLabel(timeline.type)}
-                                </span>
-                                <span className="text-lg font-black text-blue-400">
-                                  {formatTime(timeline.time)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <p className="text-sm text-orange-300 font-bold">SEASON</p>
+                  <p className="text-2xl font-black text-orange-400">{currentSeason}</p>
                 </div>
-              )}
+                <Flag className="w-8 h-8 text-orange-400" />
+              </div>
+            </div>
+          </div>
 
-              {/* Additional Match Data */}
-              {selectedMatch.game_type && (
-                <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl p-5 border-2 border-gray-600 backdrop-blur-sm">
-                  <h3 className="text-2xl font-black text-gray-300 mb-4 flex items-center gap-2">
-                    <Info className="w-7 h-7" />
-                    THÔNG TIN BỔ SUNG
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-400 font-bold mb-1">Loại trận</p>
-                      <p className="text-xl font-black text-white">{selectedMatch.game_type}</p>
-                    </div>
-                    {selectedMatch.map_name && (
-                      <div>
-                        <p className="text-sm text-gray-400 font-bold mb-1">Bản đồ</p>
-                        <p className="text-xl font-black text-white">{selectedMatch.map_name}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+          {/* Search and Controls */}
+          <div className="max-w-2xl mx-auto mb-8">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-6 h-6 text-green-400" />
+              <input
+                type="text"
+                placeholder="Tìm kiếm người chơi..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-gray-900/80 border-4 border-green-500 rounded-xl text-white text-lg font-bold placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-500/50 focus:border-green-400 backdrop-blur-sm"
+              />
+            </div>
+            <div className="flex justify-center gap-4 mt-4">
+              <button
+                onClick={fetchLeaderboard}
+                disabled={refreshing}
+                className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl text-white font-bold hover:scale-105 transition transform disabled:opacity-50 flex items-center gap-2"
+              >
+                {refreshing ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    ĐANG TẢI...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-5 h-5" />
+                    LÀM MỚI
+                  </>
+                )}
+              </button>
+              <button className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl text-white font-bold hover:scale-105 transition transform flex items-center gap-2">
+                <Filter className="w-5 h-5" />
+                LỌC
+              </button>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Main Content */}
-      <div className="relative z-10 min-h-screen flex flex-col">
-        <div className="flex-1 p-4 pb-32">
-          <div className="max-w-7xl mx-auto">
-            {/* Header */}
-            <div className="text-center mb-10 pt-10">
-              <div className="flex items-center justify-center gap-5 mb-6 animate-bounce-slow">
-                <Trophy className="w-20 h-20 text-yellow-400 drop-shadow-2xl animate-spin-slow" />
-                <h1 
-                  className="text-7xl font-black text-white drop-shadow-2xl"
-                  style={{
-                    textShadow: '8px 8px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 0 0 30px #4ade80',
-                    WebkitTextStroke: '2px #4ade80'
-                  }}
-                >
-                  MCSR RANKED
-                </h1>
-                <Trophy className="w-20 h-20 text-yellow-400 drop-shadow-2xl animate-spin-slow-reverse" />
-              </div>
-              <div className="inline-block bg-gradient-to-r from-red-600 via-yellow-500 to-green-600 rounded-full px-8 py-3 mb-6 border-4 border-yellow-400 shadow-2xl">
-                <div className="flex items-center justify-center gap-3">
-                  <Flag className="w-8 h-8 text-white" />
-                  <p 
-                    className="text-4xl font-black text-white"
-                    style={{textShadow: '3px 3px 0 #000'}}
-                  >
-                    VIỆT NAM
-                  </p>
-                  <span className="text-4xl">🇻🇳</span>
-                </div>
-              </div>
-
-              {/* Search Bar */}
-              <div className="max-w-2xl mx-auto mb-6">
-                <div className="relative">
-                  <Search className="absolute left-6 top-1/2 transform -translate-y-1/2 w-7 h-7 text-green-400" />
-                  <input
-                    type="text"
-                    placeholder="Tìm kiếm người chơi Việt Nam..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-16 pr-6 py-5 bg-black/80 border-4 border-green-600 rounded-2xl text-white text-xl font-bold focus:outline-none focus:border-green-400 transition backdrop-blur-lg shadow-2xl placeholder-gray-400"
-                    style={{textShadow: '1px 1px 2px #000'}}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
-                <div className="inline-block bg-green-900/80 border-4 border-green-600 rounded-xl px-6 py-3 backdrop-blur-sm">
-                  <p 
-                    className="text-gray-200 text-xl font-bold"
-                    style={{textShadow: '2px 2px 0 #000'}}
-                  >
-                    🇻🇳 CÓ <span className="text-yellow-400 text-2xl font-black">{filteredPlayers.length}</span> NGƯỜI CHƠI VIỆT NAM
-                  </p>
-                </div>
-                
-                <button 
-                  onClick={fetchLeaderboard}
-                  disabled={refreshing}
-                  className="px-6 py-3 bg-gradient-to-r from-green-700 to-emerald-800 hover:from-green-600 hover:to-emerald-700 rounded-xl transition transform hover:scale-105 border-4 border-green-800 shadow-xl flex items-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {refreshing ? (
-                    <Loader className="w-5 h-5 text-white animate-spin" />
-                  ) : (
-                    <Zap className="w-5 h-5 text-yellow-400 group-hover:animate-spin" />
-                  )}
-                  <span className="text-lg font-black text-white">
-                    {refreshing ? 'ĐANG CẬP NHẬT...' : 'LÀM MỚI'}
-                  </span>
-                </button>
-
-                <div className="inline-block bg-yellow-900/80 border-4 border-yellow-600 rounded-xl px-6 py-3 backdrop-blur-sm">
-                  <p className="text-gray-200 text-lg font-bold flex items-center gap-2">
-                    <Globe className="w-5 h-5 text-yellow-400" />
-                    Season: <span className="text-yellow-400 text-xl font-black">2</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Top 3 Podium */}
-            {filteredPlayers.length >= 3 && searchQuery === '' && (
-              <div className="grid grid-cols-3 gap-6 mb-12 max-w-5xl mx-auto">
-                {/* 2nd Place */}
-                <div className="pt-16 animate-slide-in" style={{animationDelay: '100ms'}}>
-                  <div className="bg-gradient-to-b from-gray-300 via-gray-400 to-gray-500 rounded-t-2xl p-6 text-center border-4 border-gray-600 shadow-2xl transform hover:scale-105 transition">
-                    <Medal className="w-16 h-16 text-gray-100 mx-auto mb-3 drop-shadow-2xl animate-wiggle" />
-                    <p className="text-3xl font-black text-white mb-2 truncate px-2" style={{textShadow: '3px 3px 0 #000'}}>
-                      {filteredPlayers[1].nickname || 'Player'}
-                    </p>
-                    <p className="text-2xl font-bold text-yellow-300">
-                      {calculateStats(filteredPlayers[1]).elo} ELO
-                    </p>
-                  </div>
-                  <div className="bg-gradient-to-b from-gray-500 to-gray-700 h-28 rounded-b-2xl border-4 border-t-0 border-gray-600 flex items-center justify-center backdrop-blur-sm shadow-xl">
-                    <span className="text-5xl font-black text-white" style={{textShadow: '4px 4px 0 #000'}}>#2</span>
-                  </div>
-                </div>
-
-                {/* 1st Place */}
-                <div className="animate-slide-in" style={{animationDelay: '0ms'}}>
-                  <div className="bg-gradient-to-b from-yellow-300 via-yellow-400 to-yellow-500 rounded-t-2xl p-8 text-center border-4 border-yellow-600 shadow-2xl transform hover:scale-110 transition">
-                    <Trophy className="w-20 h-20 text-yellow-100 mx-auto mb-4 drop-shadow-2xl animate-bounce" />
-                    <p className="text-4xl font-black text-white mb-2 truncate px-2" style={{textShadow: '4px 4px 0 #000'}}>
-                      {filteredPlayers[0].nickname || 'Player'}
-                    </p>
-                    <p className="text-3xl font-bold text-yellow-900">
-                      {calculateStats(filteredPlayers[0]).elo} ELO
-                    </p>
-                  </div>
-                  <div className="bg-gradient-to-b from-yellow-500 to-yellow-700 h-40 rounded-b-2xl border-4 border-t-0 border-yellow-600 flex items-center justify-center backdrop-blur-sm shadow-2xl">
-                    <span className="text-6xl font-black text-white animate-pulse" style={{textShadow: '5px 5px 0 #000'}}>#1</span>
-                  </div>
-                </div>
-
-                {/* 3rd Place */}
-                <div className="pt-24 animate-slide-in" style={{animationDelay: '200ms'}}>
-                  <div className="bg-gradient-to-b from-orange-300 via-orange-400 to-orange-500 rounded-t-2xl p-6 text-center border-4 border-orange-600 shadow-2xl transform hover:scale-105 transition">
-                    <Medal className="w-16 h-16 text-orange-100 mx-auto mb-3 drop-shadow-2xl animate-wiggle" style={{animationDelay: '100ms'}} />
-                    <p className="text-3xl font-black text-white mb-2 truncate px-2" style={{textShadow: '3px 3px 0 #000'}}>
-                      {filteredPlayers[2].nickname || 'Player'}
-                    </p>
-                    <p className="text-2xl font-bold text-yellow-300">
-                      {calculateStats(filteredPlayers[2]).elo} ELO
-                    </p>
-                  </div>
-                  <div className="bg-gradient-to-b from-orange-500 to-orange-700 h-20 rounded-b-2xl border-4 border-t-0 border-orange-600 flex items-center justify-center backdrop-blur-sm shadow-xl">
-                    <span className="text-4xl font-black text-white" style={{textShadow: '3px 3px 0 #000'}}>#3</span>
+        {/* Main Layout */}
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Leaderboard Section */}
+          <div className={`${selectedPlayer ? 'lg:w-2/3' : 'w-full'}`}>
+            <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 rounded-2xl border-4 border-green-600 shadow-2xl overflow-hidden">
+              {/* Leaderboard Header */}
+              <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b-4 border-green-900">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                    <Trophy className="w-7 h-7 text-yellow-400" />
+                    BẢNG XẾP HẠNG VIỆT NAM
+                  </h2>
+                  <div className="flex items-center gap-2 text-sm font-bold">
+                    <span className="bg-green-800 px-3 py-1 rounded-lg text-green-300">
+                      {filteredPlayers.length} NGƯỜI CHƠI
+                    </span>
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* Leaderboard */}
-            <div className="bg-black/80 backdrop-blur-lg rounded-3xl p-8 shadow-2xl border-4 border-green-700">
-              {filteredPlayers.length === 0 ? (
-                <div className="text-center py-16">
-                  <Search className="w-20 h-20 text-gray-500 mx-auto mb-4" />
-                  <p className="text-white text-3xl font-black" style={{textShadow: '3px 3px 0 #000'}}>
-                    KHÔNG TÌM THẤY NGƯỜI CHƠI VIỆT NAM
-                  </p>
-                  <p className="text-gray-400 text-lg font-bold mt-2">Thử tìm kiếm với từ khóa khác</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredPlayers.map((player, index) => {
-                    const playerDetail = playerDetails[player.uuid];
-                    const stats = calculateStats(player, playerDetail);
-                    const isSelected = selectedPlayer?.uuid === player.uuid;
-                    const isLoading = playerStatsLoading[player.uuid];
-                    
-                    return (
-                      <div
-                        key={player.uuid || index}
-                        className="bg-gradient-to-r from-green-800/80 to-emerald-800/80 hover:from-green-700/90 hover:to-emerald-700/90 rounded-2xl p-6 transition-all duration-300 border-4 border-green-600/70 hover:border-green-400 hover:scale-[1.02] backdrop-blur-sm shadow-lg hover:shadow-2xl"
-                      >
-                        <div 
-                          className="flex items-center gap-5 cursor-pointer"
+              {/* Leaderboard Content */}
+              <div className="p-4 max-h-[70vh] overflow-y-auto">
+                {filteredPlayers.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Search className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                    <p className="text-2xl font-black text-gray-400">
+                      Không tìm thấy người chơi
+                    </p>
+                    <p className="text-gray-500 mt-2">Thử tìm kiếm với từ khóa khác</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredPlayers.map((player, index) => {
+                      const stats = calculateStats(player);
+                      const isSelected = selectedPlayer?.uuid === player.uuid;
+                      return (
+                        <div
+                          key={player.uuid}
+                          className={`bg-gradient-to-r ${
+                            isSelected
+                              ? 'from-yellow-900/60 to-yellow-800/60 border-2 border-yellow-500'
+                              : 'from-gray-800/60 to-gray-700/60 hover:from-gray-700/60 hover:to-gray-600/60'
+                          } rounded-xl p-4 cursor-pointer transition-all duration-300 transform hover:scale-[1.02] border-2 border-transparent backdrop-blur-sm`}
                           onClick={() => handlePlayerClick(player)}
                         >
-                          {/* Rank Badge */}
-                          <div className="flex-shrink-0 w-20 h-20 flex items-center justify-center bg-gradient-to-br from-green-700 to-green-900 rounded-xl border-3 border-green-500 shadow-xl transform hover:rotate-6 transition">
-                            {getRankIcon(index + 1)}
-                          </div>
+                          <div className="flex items-center justify-between">
+                            {/* Left: Rank and Player Info */}
+                            <div className="flex items-center gap-4">
+                              <div className="flex-shrink-0 w-16 text-center">
+                                {utils.getRankIcon(player.globalRank)}
+                              </div>
 
-                          {/* Player Head Icon */}
-                          <div className="flex-shrink-0">
-                            <img 
-                              src={`https://crafatar.com/avatars/${player.uuid}?size=80&overlay`}
-                              alt={player.nickname}
-                              className="w-20 h-20 rounded-xl border-4 border-green-500 shadow-lg"
-                              onError={(e) => {
-                                e.target.src = 'https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7?size=80&overlay';
-                              }}
-                            />
-                          </div>
-
-                          {/* Player Info */}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 flex-wrap mb-2">
-                              <h3 
-                                className="text-3xl font-black text-white"
-                                style={{textShadow: '3px 3px 0 #000'}}
-                              >
-                                {player.nickname || player.username || 'Unknown'}
-                              </h3>
-                              <span 
-                                className="px-5 py-2 bg-gradient-to-r from-green-600 to-green-700 rounded-xl text-xl text-white font-black border-3 border-green-800 shadow-xl"
-                              >
-                                {stats.elo} ELO
-                              </span>
-                              {stats.highestElo > stats.elo && (
-                                <span className="px-3 py-1 bg-purple-700 rounded-lg text-sm text-white font-bold border-2 border-purple-500">
-                                  Peak: {stats.highestElo}
-                                </span>
-                              )}
-                              {player.country && (
-                                <span className="px-3 py-1 bg-blue-700 rounded-lg text-sm text-white font-bold border-2 border-blue-500 flex items-center gap-1">
-                                  <MapPin className="w-4 h-4" />
-                                  {player.country} {getCountryFlag(player.country)}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={utils.getPlayerAvatar(player.uuid, 60)}
+                                  alt={player.nickname}
+                                  className="w-14 h-14 rounded-xl border-2 border-green-500"
+                                  onError={(e) => {
+                                    e.target.src = utils.getPlayerAvatar('8667ba71b85a4004af54457a9734eed7', 60);
+                                  }}
+                                />
+                                <div>
+                                  <p className="text-xl font-black text-white">
+                                    {player.nickname || player.username || 'Unknown'}
+                                    {player.country === 'VN' && (
+                                      <span className="ml-2 text-xl">{utils.getCountryFlag('vn')}</span>
+                                    )}
+                                  </p>
+                                  <div className="flex items-center gap-3 mt-1">
+                                    <span className="text-sm font-bold text-green-400">
+                                      {player.eloRate?.toFixed(0) || 0} ELO
+                                    </span>
+                                    <span className="text-xs text-gray-400 font-bold">
+                                      #{player.globalRank}
+                                    </span>
+                                    {stats.wins > 0 && (
+                                      <span className="text-xs font-bold bg-green-700 px-2 py-1 rounded-lg">
+                                        {stats.wins}W - {stats.loses}L ({stats.winRate}%)
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex gap-5 text-base text-gray-200 font-bold flex-wrap">
-                              <span className="flex items-center gap-2 bg-green-900/50 px-3 py-1 rounded-lg">
-                                <Check className="w-5 h-5 text-green-400" />
-                                {stats.wins} Thắng
-                              </span>
-                              <span className="flex items-center gap-2 bg-red-900/50 px-3 py-1 rounded-lg">
-                                <XCircle className="w-5 h-5 text-red-400" />
-                                {stats.loses} Thua
-                              </span>
-                              <span className="flex items-center gap-2 bg-yellow-900/50 px-3 py-1 rounded-lg">
-                                <Percent className="w-5 h-5 text-yellow-400" />
-                                {stats.winRate}% Win Rate
-                              </span>
-                              <span className="flex items-center gap-2 bg-blue-900/50 px-3 py-1 rounded-lg">
-                                <Swords className="w-5 h-5 text-blue-400" />
-                                {stats.kills} Kills
-                              </span>
-                              <span className="flex items-center gap-2 bg-gray-900/50 px-3 py-1 rounded-lg">
-                                <Skull className="w-5 h-5 text-gray-400" />
-                                {stats.deaths} Deaths
-                              </span>
-                            </div>
-                          </div>
 
-                          {/* Expand Icon */}
-                          <div className="flex-shrink-0">
-                            {isLoading ? (
-                              <Loader className="w-8 h-8 text-green-400 animate-spin" />
-                            ) : isSelected ? (
-                              <ChevronUp className="w-8 h-8 text-green-400 animate-bounce" />
-                            ) : (
-                              <ChevronDown className="w-8 h-8 text-green-400" />
-                            )}
+                            {/* Right: Stats */}
+                            <div className="hidden md:flex items-center gap-6">
+                              <div className="text-center">
+                                <p className="text-xs text-gray-400 font-bold">K/D</p>
+                                <p className="text-xl font-black text-red-400">
+                                  {stats.deaths > 0
+                                    ? (stats.kills / stats.deaths).toFixed(2)
+                                    : stats.kills.toFixed(0)}
+                                </p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xs text-gray-400 font-bold">MATCHES</p>
+                                <p className="text-xl font-black text-blue-400">{stats.matches}</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xs text-gray-400 font-bold">WINRATE</p>
+                                <p className="text-xl font-black text-yellow-400">{stats.winRate}%</p>
+                              </div>
+                              <div className="bg-green-700 p-2 rounded-lg">
+                                {isSelected ? (
+                                  <ChevronUp className="w-6 h-6 text-white" />
+                                ) : (
+                                  <ChevronDown className="w-6 h-6 text-white" />
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
-
-                        {/* Expanded Details */}
-                        {isSelected && (
-                          <div className="mt-6 pt-6 border-t-4 border-green-700/50 animate-slide-down">
-                            {/* Stats View Tabs */}
-                            <div className="flex gap-2 mb-6">
-                              <button
-                                onClick={() => setStatsView('overview')}
-                                className={`px-4 py-2 rounded-lg transition font-bold ${statsView === 'overview' ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <BarChart3 className="w-4 h-4" />
-                                  Tổng quan
-                                </div>
-                              </button>
-                              <button
-                                onClick={() => setStatsView('detailed')}
-                                className={`px-4 py-2 rounded-lg transition font-bold ${statsView === 'detailed' ? 'bg-blue-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Activity className="w-4 h-4" />
-                                  Chi tiết
-                                </div>
-                              </button>
-                              <button
-                                onClick={() => setStatsView('matches')}
-                                className={`px-4 py-2 rounded-lg transition font-bold ${statsView === 'matches' ? 'bg-yellow-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Trophy className="w-4 h-4" />
-                                  Trận đấu
-                                </div>
-                              </button>
-                            </div>
-
-                            {/* Stats Content */}
-                            {renderPlayerStats(player, stats)}
-
-                            {/* Raw Data Button */}
-                            {playerDetail && (
-                              <div className="mt-6 pt-4 border-t border-gray-700">
-                                <details className="bg-gray-900/50 rounded-xl overflow-hidden">
-                                  <summary className="p-3 bg-gray-800/50 cursor-pointer font-bold text-gray-300 flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4" />
-                                    Dữ liệu thô từ API
-                                  </summary>
-                                  <div className="p-3 bg-gray-950/50">
-                                    <pre className="text-xs text-gray-400 overflow-auto max-h-60">
-                                      {JSON.stringify(playerDetail, null, 2)}
-                                    </pre>
-                                  </div>
-                                </details>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Player Details Panel */}
+          {selectedPlayer && (
+            <div className="lg:w-1/3">
+              <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 rounded-2xl border-4 border-blue-600 shadow-2xl overflow-hidden sticky top-8">
+                {/* Player Header */}
+                <div className="bg-gradient-to-r from-blue-700 to-cyan-700 p-6 border-b-4 border-blue-900">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                      <img
+                        src={utils.getPlayerAvatar(selectedPlayer.uuid, 80)}
+                        alt={selectedPlayer.nickname}
+                        className="w-20 h-20 rounded-xl border-4 border-yellow-400"
+                        onError={(e) => {
+                          e.target.src = utils.getPlayerAvatar('8667ba71b85a4004af54457a9734eed7', 80);
+                        }}
+                      />
+                      <div>
+                        <h3 className="text-2xl font-black text-white">
+                          {selectedPlayer.nickname || selectedPlayer.username}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-3xl font-black text-yellow-400">
+                            {selectedPlayer.eloRate?.toFixed(0) || 0}
+                          </span>
+                          <span className="text-sm font-bold text-gray-300">ELO</span>
+                          <span className="mx-2">•</span>
+                          <span className="text-lg font-black text-white">
+                            #{selectedPlayer.globalRank}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedPlayer(null)}
+                      className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+                    >
+                      <X className="w-6 h-6 text-white" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stats View Tabs */}
+                <div className="border-b border-gray-700">
+                  <div className="flex">
+                    {[
+                      { id: 'overview', label: 'Tổng quan', icon: <BarChart3 className="w-5 h-5" /> },
+                      { id: 'detailed', label: 'Chi tiết', icon: <Target className="w-5 h-5" /> },
+                      { id: 'matches', label: 'Trận đấu', icon: <Swords className="w-5 h-5" /> }
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setStatsView(tab.id)}
+                        className={`flex-1 py-4 flex flex-col items-center gap-2 font-bold transition ${
+                          statsView === tab.id
+                            ? 'bg-gradient-to-t from-blue-900/50 to-transparent text-blue-400'
+                            : 'text-gray-400 hover:text-gray-300'
+                        }`}
+                      >
+                        {tab.icon}
+                        <span className="text-sm">{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stats Content */}
+                <div className="p-6">
+                  {selectedPlayer.loading ? (
+                    <div className="text-center py-12">
+                      <Loader className="w-10 h-10 text-blue-400 mx-auto mb-4 animate-spin" />
+                      <p className="text-gray-400 font-bold">Đang tải thống kê...</p>
+                    </div>
+                  ) : (
+                    <PlayerStatsView
+                      player={selectedPlayer}
+                      stats={calculateStats(selectedPlayer, selectedPlayer.stats)}
+                      statsView={statsView}
+                      matches={selectedPlayer.matches}
+                      onMatchClick={handleMatchClick}
+                    />
+                  )}
+                </div>
+
+                {/* Additional Info */}
+                {selectedPlayer.details && (
+                  <div className="p-6 border-t border-gray-700">
+                    <h4 className="text-lg font-black text-white mb-4 flex items-center gap-2">
+                      <Info className="w-5 h-5 text-blue-400" />
+                      THÔNG TIN KHÁC
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400 font-bold">Ngày tham gia:</span>
+                        <span className="text-white font-bold">
+                          {new Date(selectedPlayer.details.created * 1000).toLocaleDateString('vi-VN')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400 font-bold">Điểm cao nhất:</span>
+                        <span className="text-yellow-400 font-bold">
+                          {selectedPlayer.details.highestEloRate?.toFixed(0) || 0} ELO
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400 font-bold">Hạng cao nhất:</span>
+                        <span className="text-green-400 font-bold">
+                          #{selectedPlayer.details.highestEloRank || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <footer className="relative z-10 bg-gradient-to-t from-black via-black/90 to-transparent py-8 mt-16 border-t-4 border-green-800">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-              <div className="text-center md:text-left">
-                <div className="flex items-center justify-center md:justify-start gap-3 mb-3">
-                  <Trophy className="w-10 h-10 text-yellow-400 animate-pulse" />
-                  <h2 
-                    className="text-2xl font-black text-white"
-                    style={{textShadow: '2px 2px 0 #000'}}
-                  >
-                    MCSR Ranked Vietnam Leaderboard
-                  </h2>
-                </div>
-                <p className="text-gray-400 font-bold">
-                  Dữ liệu được cập nhật từ API chính thức của MCSR Ranked
-                </p>
-                <p className="text-gray-500 text-sm font-bold mt-2">
-                  API: https://api.mcsrranked.com/api
-                </p>
-              </div>
-              
-              <div className="flex flex-col items-center md:items-end gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-gray-400 font-bold">Trực tuyến</span>
-                  </div>
-                  <span className="text-gray-500 font-bold">•</span>
-                  <span className="text-gray-400 font-bold flex items-center gap-1">
-                    <Flag className="w-4 h-4" />
-                    Chỉ hiển thị người chơi Việt Nam
-                  </span>
-                </div>
-                <p className="text-gray-500 text-sm font-bold">
-                  Cập nhật lần cuối: {new Date().toLocaleDateString('vi-VN', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    second: '2-digit'
-                  })}
-                </p>
-              </div>
-            </div>
-          </div>
-        </footer>
+        <div className="mt-12 text-center">
+          <p className="text-gray-500 text-sm">
+            Dữ liệu được cập nhật từ{' '}
+            <a
+              href="https://mcsrranked.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-green-400 font-bold hover:underline"
+            >
+              MCSR Ranked API
+            </a>
+          </p>
+          <p className="text-gray-600 text-xs mt-2">
+            © 2024 Minecraft Speedrunning Vietnam Leaderboard
+          </p>
+        </div>
       </div>
 
-      {/* Floating Scroll to Top */}
-      {typeof window !== 'undefined' && window.scrollY > 500 && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-8 right-8 z-40 p-4 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-xl border-4 border-yellow-800 shadow-2xl hover:scale-110 transition transform animate-bounce"
-        >
-          <ChevronUp className="w-8 h-8 text-white" />
-        </button>
+      {/* Match Details Modal */}
+      {selectedMatch && (
+        <MatchDetailsModal
+          match={selectedMatch}
+          onClose={() => setSelectedMatch(null)}
+        />
       )}
 
-      {/* CSS Animations */}
-      <style jsx global>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) scale(1.1); }
-          50% { transform: translateY(-20px) scale(1.12); }
-        }
-
-        @keyframes slide-in {
-          from { 
-            opacity: 0;
-            transform: translateX(-50px);
-          }
-          to { 
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-
-        @keyframes slide-down {
-          from { 
-            opacity: 0;
-            transform: translateY(-20px);
-          }
-          to { 
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        @keyframes spin-slow-reverse {
-          from { transform: rotate(360deg); }
-          to { transform: rotate(0deg); }
-        }
-
-        @keyframes wiggle {
-          0%, 100% { transform: rotate(0deg); }
-          25% { transform: rotate(5deg); }
-          75% { transform: rotate(-5deg); }
-        }
-
-        @keyframes bounce-slow {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
-        }
-
-        .animate-float {
-          animation: float 20s ease-in-out infinite;
-        }
-
-        .animate-slide-in {
-          animation: slide-in 0.5s ease-out forwards;
-        }
-
-        .animate-slide-down {
-          animation: slide-down 0.3s ease-out forwards;
-        }
-
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out forwards;
-        }
-
-        .animate-spin-slow {
-          animation: spin-slow 20s linear infinite;
-        }
-
-        .animate-spin-slow-reverse {
-          animation: spin-slow-reverse 15s linear infinite;
-        }
-
-        .animate-wiggle {
-          animation: wiggle 2s ease-in-out infinite;
-        }
-
-        .animate-bounce-slow {
-          animation: bounce-slow 2s ease-in-out infinite;
-        }
-
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-          width: 12px;
-        }
-
-        ::-webkit-scrollbar-track {
-          background: rgba(0, 0, 0, 0.3);
-          border-radius: 10px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-          background: linear-gradient(to bottom, #4ade80, #16a34a);
-          border-radius: 10px;
-          border: 3px solid rgba(0, 0, 0, 0.3);
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(to bottom, #22c55e, #15803d);
-        }
-
-        /* Responsive adjustments */
-        @media (max-width: 1024px) {
-          .text-7xl {
-            font-size: 4rem;
-          }
-          
-          .text-4xl {
-            font-size: 2.5rem;
-          }
-        }
-
-        @media (max-width: 768px) {
-          .text-7xl {
-            font-size: 3rem;
-          }
-          
-          .grid-cols-3 {
-            grid-template-columns: 1fr;
-            gap: 2rem;
-          }
-          
-          .pt-16, .pt-24 {
-            padding-top: 0;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .text-7xl {
-            font-size: 2.5rem;
-          }
-          
-          .flex-wrap {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.5rem;
-          }
-          
-          .p-6 {
-            padding: 1rem;
-          }
-          
-          .gap-5 {
-            gap: 1rem;
-          }
-        }
-      `}</style>
+      {/* Floating Elements */}
+      <div className="fixed bottom-8 right-8 flex flex-col gap-4">
+        <button
+          onClick={fetchLeaderboard}
+          className="p-4 bg-gradient-to-r from-green-600 to-emerald-600 rounded-full shadow-2xl hover:scale-110 transition transform"
+          title="Làm mới dữ liệu"
+        >
+          <Zap className="w-6 h-6 text-white" />
+        </button>
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-2xl hover:scale-110 transition transform"
+          title="Lên đầu trang"
+        >
+          <ChevronUp className="w-6 h-6 text-white" />
+        </button>
+      </div>
     </div>
   );
-        }
+}
+
+// Add missing Filter and Info components
+const Filter = (props) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+  </svg>
+);
+
+const Info = (props) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="16" x2="12" y2="12" />
+    <line x1="12" y1="8" x2="12.01" y2="8" />
+  </svg>
+);
