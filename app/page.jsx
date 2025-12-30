@@ -1,9 +1,12 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader, Check, XCircle, Percent, Users, Swords, Heart, BarChart3, Calendar, Globe, Crown, Skull, Timer, Hash, Activity, AlertCircle, Flag, MapPin, Filter, ArrowUpDown } from 'lucide-react';
+import { 
+  Trophy, Medal, Search, Zap, Loader, AlertCircle, 
+  Globe, Crown, BarChart3, TrendingUp, Flag, X 
+} from 'lucide-react';
 
 // ==================== API SERVICE ====================
-const API_BASE = 'https://api.mcsrranked.com';
+const API_BASE = 'https://api.mcsrranked.com/api';
 
 const apiService = {
   async fetchWithRetry(url, retries = 3) {
@@ -41,30 +44,12 @@ const apiService = {
 
 // ==================== UTILITY FUNCTIONS ====================
 const utils = {
-  formatTime(ms) {
-    if (!ms && ms !== 0) return 'N/A';
-    const totalSeconds = ms / 1000;
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = Math.floor(totalSeconds % 60);
-    const milliseconds = Math.floor(ms % 1000);
-    return `${mins}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
-  },
-
-  getCountryFlag(code) {
-    const flags = {
-      'vn': '🇻🇳', 'us': '🇺🇸', 'gb': '🇬🇧', 'ca': '🇨🇦',
-      'au': '🇦🇺', 'de': '🇩🇪', 'fr': '🇫🇷', 'jp': '🇯🇵',
-      'kr': '🇰🇷', 'cn': '🇨🇳'
-    };
-    return flags[code?.toLowerCase()] || '🌐';
-  },
-
   getPlayerAvatar(uuid, size = 80) {
     return `https://crafatar.com/avatars/${uuid}?size=${size}&overlay`;
   },
 
   getRankIcon(rank) {
-    if (rank === 1) return <Trophy className="w-10 h-10 text-yellow-400 drop-shadow-2xl animate-pulse" />;
+    if (rank === 1) return <Trophy className="w-10 h-10 text-yellow-400 drop-shadow-2xl" />;
     if (rank === 2) return <Medal className="w-10 h-10 text-gray-300 drop-shadow-xl" />;
     if (rank === 3) return <Medal className="w-10 h-10 text-orange-400 drop-shadow-xl" />;
     return <span className="text-2xl font-black text-white drop-shadow-lg">#{rank}</span>;
@@ -80,12 +65,14 @@ const utils = {
   calculateKD(player) {
     const kills = player.statistics?.kills || 0;
     const deaths = player.statistics?.deaths || 0;
-    return deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(0);
+    return deaths > 0 ? (kills / deaths).toFixed(2) : kills > 0 ? kills.toFixed(0) : '0';
   }
 };
 
 // ==================== SORTING FUNCTIONS ====================
 const sortPlayers = (players, sortBy, sortDirection) => {
+  if (!players || !Array.isArray(players)) return [];
+  
   const sorted = [...players];
   
   switch (sortBy) {
@@ -115,8 +102,8 @@ const sortPlayers = (players, sortBy, sortDirection) => {
     
     case 'winrate':
       sorted.sort((a, b) => {
-        const rateA = utils.calculateWinRate(a);
-        const rateB = utils.calculateWinRate(b);
+        const rateA = parseFloat(utils.calculateWinRate(a)) || 0;
+        const rateB = parseFloat(utils.calculateWinRate(b)) || 0;
         return sortDirection === 'asc' ? rateA - rateB : rateB - rateA;
       });
       break;
@@ -157,17 +144,6 @@ const sortPlayers = (players, sortBy, sortDirection) => {
   }));
 };
 
-// ==================== STAT CARD COMPONENT ====================
-const StatCard = ({ icon, label, value, color }) => (
-  <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700">
-    <div className="flex items-center gap-2 mb-1">
-      {icon}
-      <span className="text-xs text-gray-400 font-bold">{label}</span>
-    </div>
-    <p className={`text-2xl font-black text-${color}-400`}>{value}</p>
-  </div>
-);
-
 // ==================== SORT HEADER COMPONENT ====================
 const SortHeader = ({ label, sortKey, currentSort, sortDirection, onClick }) => {
   const isActive = currentSort === sortKey;
@@ -175,13 +151,17 @@ const SortHeader = ({ label, sortKey, currentSort, sortDirection, onClick }) => 
   return (
     <button
       onClick={() => onClick(sortKey)}
-      className="flex items-center gap-1 hover:bg-gray-800/50 px-3 py-2 rounded-lg transition"
+      className={`flex items-center gap-1 px-3 py-2 rounded-lg transition ${
+        isActive 
+          ? 'bg-green-800/50 text-green-400' 
+          : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-300'
+      }`}
     >
-      <span className={`font-bold ${isActive ? 'text-green-400' : 'text-gray-400'}`}>
-        {label}
-      </span>
+      <span className="font-bold">{label}</span>
       {isActive && (
-        <ArrowUpDown className={`w-4 h-4 ${sortDirection === 'asc' ? 'text-green-300' : 'text-green-500'}`} />
+        <span className="text-xs">
+          {sortDirection === 'asc' ? '↑' : '↓'}
+        </span>
       )}
     </button>
   );
@@ -204,6 +184,8 @@ export default function MCSRLeaderboardPro() {
   }, []);
 
   useEffect(() => {
+    if (!players || !Array.isArray(players)) return;
+    
     if (searchQuery.trim() === '') {
       const sorted = sortPlayers(players, sortBy, sortDirection);
       setFilteredPlayers(sorted);
@@ -261,38 +243,27 @@ export default function MCSRLeaderboardPro() {
   };
 
   const getPlayerStats = (player) => {
+    if (!player) return { wins: 0, loses: 0, total: 0, winRate: 0, kd: '0' };
+    
     const wins = player.statistics?.win || player.statistics?.wins || 0;
     const loses = player.statistics?.lose || player.statistics?.losses || 0;
     const total = wins + loses;
     const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
-    const kills = player.statistics?.kills || 0;
-    const deaths = player.statistics?.deaths || 0;
-    const kd = deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(0);
+    const kd = utils.calculateKD(player);
 
-    return { wins, loses, total, winRate, kills, deaths, kd };
+    return { wins, loses, total, winRate, kd };
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
-          style={{
-            backgroundImage: 'url(https://wallpapercave.com/wp/wp2571595.png)',
-            filter: 'blur(8px)',
-            transform: 'scale(1.1)'
-          }}
-        />
-        <div className="relative z-10 flex items-center justify-center min-h-screen">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
+        <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="relative w-24 h-24 mx-auto mb-8">
               <div className="absolute inset-0 border-8 border-green-500/30 rounded-2xl"></div>
               <div className="absolute inset-0 border-8 border-green-400 border-t-transparent rounded-2xl animate-spin"></div>
             </div>
-            <p
-              className="text-white text-4xl font-black tracking-wider animate-pulse"
-              style={{ textShadow: '4px 4px 0 #000, 0 0 20px #4ade80' }}
-            >
+            <p className="text-white text-4xl font-black tracking-wider animate-pulse">
               ĐANG TẢI...
             </p>
             <p className="text-green-400 text-xl font-bold mt-4">
@@ -306,17 +277,17 @@ export default function MCSRLeaderboardPro() {
 
   if (error) {
     return (
-      <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-red-900 to-gray-900">
-        <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-red-900 to-gray-900">
+        <div className="flex items-center justify-center min-h-screen p-4">
           <div className="text-center p-8 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border-4 border-red-500 shadow-2xl max-w-lg w-full">
             <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-6" />
-            <h2 className="text-4xl font-black text-white mb-4" style={{ textShadow: '2px 2px 0 #000' }}>
+            <h2 className="text-4xl font-black text-white mb-4">
               {error.title}
             </h2>
             <p className="text-xl text-gray-300 mb-4">{error.message}</p>
             {error.details && (
               <div className="bg-red-900/50 rounded-lg p-4 mb-6 text-left">
-                <p className="text-red-300 text-sm font-mono">{error.details}</p>
+                <p className="text-red-300 text-sm font-mono break-words">{error.details}</p>
               </div>
             )}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -333,9 +304,6 @@ export default function MCSRLeaderboardPro() {
                 TẢI LẠI TRANG
               </button>
             </div>
-            <p className="text-gray-500 text-sm mt-6">
-              Nếu lỗi vẫn tiếp diễn, vui lòng liên hệ quản trị viên
-            </p>
           </div>
         </div>
       </div>
@@ -349,33 +317,19 @@ export default function MCSRLeaderboardPro() {
   const topElo = players[0]?.eloRate?.toFixed(0) || 0;
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
-      {/* Background */}
-      <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-10"
-        style={{
-          backgroundImage: 'url(https://wallpapercave.com/wp/wp2571595.png)',
-          filter: 'blur(4px)',
-          transform: 'scale(1.05)'
-        }}
-      />
-
-      {/* Main Content */}
-      <div className="relative z-10 container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
+      <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-10">
           <div className="flex flex-col items-center gap-4 mb-6">
             <div className="flex items-center justify-center gap-4">
-              <Trophy className="w-16 h-16 text-yellow-400 drop-shadow-2xl" />
-              <h1
-                className="text-5xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 via-green-400 to-yellow-400"
-                style={{ textShadow: '4px 4px 0 #000, 0 0 30px rgba(74, 222, 128, 0.5)' }}
-              >
+              <Trophy className="w-16 h-16 text-yellow-400" />
+              <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-green-400 to-yellow-400">
                 MCSR VIỆT NAM
               </h1>
-              <Trophy className="w-16 h-16 text-yellow-400 drop-shadow-2xl" />
+              <Trophy className="w-16 h-16 text-yellow-400" />
             </div>
-            <p className="text-xl text-green-300 font-bold flex items-center gap-2">
+            <p className="text-xl text-green-300 font-bold flex items-center gap-2 justify-center">
               <Globe className="w-5 h-5" />
               LEADERBOARD SEASON {currentSeason}
               <span className="bg-green-700 px-3 py-1 rounded-lg text-white text-sm ml-2">
@@ -386,7 +340,7 @@ export default function MCSRLeaderboardPro() {
 
           {/* Stats Bar */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-gradient-to-br from-green-800/60 to-green-900/60 rounded-xl p-4 border-2 border-green-500">
+            <div className="bg-gray-900/60 rounded-xl p-4 border-2 border-green-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-green-300 font-bold">TOP 1 ELO</p>
@@ -395,7 +349,7 @@ export default function MCSRLeaderboardPro() {
                 <Crown className="w-8 h-8 text-yellow-400" />
               </div>
             </div>
-            <div className="bg-gradient-to-br from-blue-800/60 to-blue-900/60 rounded-xl p-4 border-2 border-blue-500">
+            <div className="bg-gray-900/60 rounded-xl p-4 border-2 border-blue-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-blue-300 font-bold">TRUNG BÌNH</p>
@@ -404,7 +358,7 @@ export default function MCSRLeaderboardPro() {
                 <BarChart3 className="w-8 h-8 text-blue-400" />
               </div>
             </div>
-            <div className="bg-gradient-to-br from-purple-800/60 to-purple-900/60 rounded-xl p-4 border-2 border-purple-500">
+            <div className="bg-gray-900/60 rounded-xl p-4 border-2 border-purple-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-purple-300 font-bold">TOP 100</p>
@@ -415,7 +369,7 @@ export default function MCSRLeaderboardPro() {
                 <TrendingUp className="w-8 h-8 text-purple-400" />
               </div>
             </div>
-            <div className="bg-gradient-to-br from-orange-800/60 to-orange-900/60 rounded-xl p-4 border-2 border-orange-500">
+            <div className="bg-gray-900/60 rounded-xl p-4 border-2 border-orange-500">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-orange-300 font-bold">SEASON</p>
@@ -435,7 +389,7 @@ export default function MCSRLeaderboardPro() {
                 placeholder="Tìm kiếm người chơi..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-gray-900/80 border-4 border-green-500 rounded-xl text-white text-lg font-bold placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-500/50 focus:border-green-400 backdrop-blur-sm"
+                className="w-full pl-12 pr-4 py-4 bg-gray-900/80 border-2 border-green-500 rounded-xl text-white text-lg placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-400"
               />
             </div>
             <div className="flex justify-center gap-4 mt-4">
@@ -461,15 +415,15 @@ export default function MCSRLeaderboardPro() {
         </div>
 
         {/* Leaderboard Section */}
-        <div className="bg-gradient-to-br from-gray-900/90 to-gray-800/90 rounded-2xl border-4 border-green-600 shadow-2xl overflow-hidden">
+        <div className="bg-gray-900/60 rounded-2xl border-2 border-green-600 overflow-hidden">
           {/* Leaderboard Header */}
-          <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b-4 border-green-900">
+          <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b-2 border-green-900">
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
               <h2 className="text-2xl font-black text-white flex items-center gap-3">
                 <Trophy className="w-7 h-7 text-yellow-400" />
                 BẢNG XẾP HẠNG VIỆT NAM
               </h2>
-              <div className="flex items-center gap-2 text-sm font-bold">
+              <div className="text-sm font-bold">
                 <span className="bg-green-800 px-3 py-1 rounded-lg text-green-300">
                   {filteredPlayers.length} NGƯỜI CHƠI
                 </span>
@@ -477,7 +431,7 @@ export default function MCSRLeaderboardPro() {
             </div>
 
             {/* Sort Controls */}
-            <div className="flex flex-wrap gap-2 mt-4">
+            <div className="flex flex-wrap gap-1 mt-4">
               <SortHeader
                 label="Hạng"
                 sortKey="rank"
@@ -525,7 +479,7 @@ export default function MCSRLeaderboardPro() {
 
           {/* Leaderboard Content */}
           <div className="p-4 max-h-[70vh] overflow-y-auto">
-            {filteredPlayers.length === 0 ? (
+            {!filteredPlayers || filteredPlayers.length === 0 ? (
               <div className="text-center py-12">
                 <Search className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                 <p className="text-2xl font-black text-gray-400">
@@ -541,30 +495,27 @@ export default function MCSRLeaderboardPro() {
                   return (
                     <div
                       key={player.uuid}
-                      className="bg-gradient-to-r from-gray-800/60 to-gray-700/60 hover:from-gray-700/60 hover:to-gray-600/60 rounded-xl p-4 transition-all duration-300 border-2 border-transparent hover:border-green-500/30 backdrop-blur-sm"
+                      className="bg-gray-800/60 hover:bg-gray-700/60 rounded-xl p-4 transition-all duration-300 border-2 border-transparent hover:border-green-500/30"
                     >
                       <div className="flex items-center justify-between">
                         {/* Left: Rank and Player Info */}
                         <div className="flex items-center gap-4">
-                          <div className="flex-shrink-0 w-16 text-center">
+                          <div className="flex-shrink-0 w-12 text-center">
                             {utils.getRankIcon(player.globalRank)}
                           </div>
 
                           <div className="flex items-center gap-3">
                             <img
-                              src={utils.getPlayerAvatar(player.uuid, 60)}
+                              src={utils.getPlayerAvatar(player.uuid, 50)}
                               alt={player.nickname}
-                              className="w-14 h-14 rounded-xl border-2 border-green-500"
+                              className="w-12 h-12 rounded-xl border-2 border-green-500"
                               onError={(e) => {
-                                e.target.src = utils.getPlayerAvatar('8667ba71b85a4004af54457a9734eed7', 60);
+                                e.target.src = `https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7?size=50&overlay`;
                               }}
                             />
                             <div>
-                              <p className="text-xl font-black text-white">
+                              <p className="text-lg font-black text-white">
                                 {player.nickname || player.username || 'Unknown'}
-                                {player.country === 'VN' && (
-                                  <span className="ml-2 text-xl">{utils.getCountryFlag('vn')}</span>
-                                )}
                               </p>
                               <div className="flex items-center gap-3 mt-1">
                                 <span className="text-sm font-bold text-green-400">
@@ -579,48 +530,34 @@ export default function MCSRLeaderboardPro() {
                         </div>
 
                         {/* Right: Stats */}
-                        <div className="hidden lg:flex items-center gap-6">
+                        <div className="hidden md:flex items-center gap-4">
                           <div className="text-center">
-                            <p className="text-xs text-gray-400 font-bold">THẮNG</p>
-                            <p className="text-xl font-black text-green-400">{stats.wins}</p>
+                            <p className="text-xs text-gray-400 font-bold">W</p>
+                            <p className="text-lg font-black text-green-400">{stats.wins}</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-xs text-gray-400 font-bold">THUA</p>
-                            <p className="text-xl font-black text-red-400">{stats.loses}</p>
+                            <p className="text-xs text-gray-400 font-bold">L</p>
+                            <p className="text-lg font-black text-red-400">{stats.loses}</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-xs text-gray-400 font-bold">WIN RATE</p>
-                            <p className="text-xl font-black text-yellow-400">{stats.winRate}%</p>
+                            <p className="text-xs text-gray-400 font-bold">%</p>
+                            <p className="text-lg font-black text-yellow-400">{stats.winRate}%</p>
                           </div>
                           <div className="text-center">
                             <p className="text-xs text-gray-400 font-bold">K/D</p>
-                            <p className="text-xl font-black text-purple-400">{stats.kd}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-gray-400 font-bold">TRẬN</p>
-                            <p className="text-xl font-black text-blue-400">{stats.total}</p>
+                            <p className="text-lg font-black text-purple-400">{stats.kd}</p>
                           </div>
                         </div>
 
                         {/* Mobile Stats */}
-                        <div className="lg:hidden">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">W</p>
-                              <p className="text-lg font-black text-green-400">{stats.wins}</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">L</p>
-                              <p className="text-lg font-black text-red-400">{stats.loses}</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">%</p>
-                              <p className="text-lg font-black text-yellow-400">{stats.winRate}%</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">K/D</p>
-                              <p className="text-lg font-black text-purple-400">{stats.kd}</p>
-                            </div>
+                        <div className="md:hidden">
+                          <div className="text-right">
+                            <p className="text-xs text-gray-400 font-bold">W/L</p>
+                            <p className="text-lg font-black">
+                              <span className="text-green-400">{stats.wins}</span>
+                              <span className="text-gray-400">/</span>
+                              <span className="text-red-400">{stats.loses}</span>
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -635,7 +572,7 @@ export default function MCSRLeaderboardPro() {
         {/* Footer */}
         <div className="mt-12 text-center">
           <p className="text-gray-500 text-sm">
-            Dữ liệu được cập nhật từ{' '}
+            Dữ liệu từ{' '}
             <a
               href="https://mcsrranked.com"
               target="_blank"
@@ -646,7 +583,7 @@ export default function MCSRLeaderboardPro() {
             </a>
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            © 2024 Minecraft Speedrunning Vietnam Leaderboard
+            © 2024 Minecraft Speedrunning Vietnam
           </p>
         </div>
       </div>
@@ -666,4 +603,4 @@ export default function MCSRLeaderboardPro() {
       </button>
     </div>
   );
-    }
+}
