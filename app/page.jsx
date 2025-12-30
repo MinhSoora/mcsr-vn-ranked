@@ -1,3 +1,4 @@
+'use client';
 import React, { useState, useEffect } from 'react';
 import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader, Check, XCircle, Percent, Users, Swords, Heart, BarChart3, Calendar, Globe, Crown, Skull, Timer, Hash, Activity, AlertCircle, Flag, MapPin } from 'lucide-react';
 
