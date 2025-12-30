@@ -3,11 +3,21 @@ import React, { useState, useEffect } from 'react';
 import { 
   Trophy, Medal, Search, Zap, Loader, AlertCircle, 
   Globe, Crown, BarChart3, TrendingUp, Flag, 
-  Clock, Award, Target, X, ExternalLink, User
+  Clock, Award, Target, X, ExternalLink, User, Users, Timer, Percent, Calendar, Sword
 } from 'lucide-react';
 
+// Thêm font Minecraft
+const style = document.createElement('style');
+style.textContent = `
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  .minecraft-font {
+    font-family: 'Press Start 2P', cursive;
+  }
+`;
+document.head.appendChild(style);
+
 // ==================== API SERVICE ====================
-const API_BASE = 'https://api.mcsrranked.com';
+const API_BASE = 'https://mcsrranked.com/api';
 
 const apiService = {
   async fetchWithRetry(url, retries = 3) {
@@ -25,16 +35,6 @@ const apiService = {
     }
   },
 
-  async getSeasonInfo() {
-    try {
-      const data = await this.fetchWithRetry(`${API_BASE}/leaderboard?count=1`);
-      return data.data?.season?.number || 2;
-    } catch (err) {
-      console.error('Error getting season:', err);
-      return 2;
-    }
-  },
-
   async getLeaderboard(country = 'VN', type = 2, count = 100) {
     const data = await this.fetchWithRetry(
       `${API_BASE}/leaderboard?type=${type}&country=${country}&count=${count}`
@@ -42,186 +42,197 @@ const apiService = {
     return data.data?.users || [];
   },
 
-  async getUserStats(uuid, season = null) {
-    const url = season 
-      ? `${API_BASE}/users/${uuid}/statistics?season=${season}`
-      : `${API_BASE}/users/${uuid}/statistics`;
+  async getUserDetails(username) {
     try {
-      const data = await this.fetchWithRetry(url);
+      const data = await this.fetchWithRetry(`${API_BASE}/users/${username}`);
       return data.data;
     } catch (err) {
-      console.error('Error fetching user stats:', err);
+      console.error(`Error fetching user ${username}:`, err);
       return null;
+    }
+  },
+
+  async getCurrentSeason() {
+    try {
+      const data = await this.fetchWithRetry(`${API_BASE}/leaderboard?count=1`);
+      const season = data.data?.season;
+      if (season && typeof season === 'object') {
+        return {
+          number: season.number || 2,
+          startsAt: season.startsAt,
+          endsAt: season.endsAt
+        };
+      }
+      return { number: 2, startsAt: null, endsAt: null };
+    } catch (err) {
+      console.error('Error getting season:', err);
+      return { number: 2, startsAt: null, endsAt: null };
     }
   }
 };
 
 // ==================== UTILITY FUNCTIONS ====================
 const formatTime = (ms) => {
-  if (!ms && ms !== 0) return 'N/A';
+  if (!ms && ms !== 0) return '--:--';
+  if (ms >= 3600000) {
+    const hours = Math.floor(ms / 3600000);
+    const mins = Math.floor((ms % 3600000) / 60000);
+    return `${hours}h ${mins}m`;
+  }
+  
   const totalSeconds = ms / 1000;
   const mins = Math.floor(totalSeconds / 60);
   const secs = Math.floor(totalSeconds % 60);
   const milliseconds = Math.floor(ms % 1000);
-  return `${mins}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+  
+  if (mins > 0) {
+    return `${mins}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+  } else {
+    return `${secs}.${milliseconds.toString().padStart(3, '0')}s`;
+  }
 };
 
-const getPlayerSkin = (uuid) => {
-  return `https://crafatar.com/renders/body/${uuid}?overlay&scale=10`;
+const getPlayerHead = (uuid) => {
+  if (!uuid) return 'https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7?size=40&overlay';
+  return `https://crafatar.com/avatars/${uuid}?size=40&overlay`;
 };
 
-const getPlayerAvatar = (uuid) => {
-  return `https://crafatar.com/avatars/${uuid}?overlay`;
+const calculateDaysLeft = (endTimestamp) => {
+  if (!endTimestamp) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const secondsLeft = endTimestamp - now;
+  if (secondsLeft < 0) return 0;
+  return Math.ceil(secondsLeft / 86400); // Convert to days
 };
 
-const getRankIcon = (rank) => {
-  if (rank === 1) return <Trophy className="w-8 h-8 text-yellow-400" />;
-  if (rank === 2) return <Medal className="w-8 h-8 text-gray-300" />;
-  if (rank === 3) return <Medal className="w-8 h-8 text-orange-400" />;
-  return <span className="text-xl font-bold text-white">#{rank}</span>;
-};
-
-const calculateStats = (player, detailedStats) => {
-  const stats = detailedStats || player.statistics || {};
+const calculateStats = (userData) => {
+  if (!userData) return null;
+  
+  const stats = userData.statistics || {};
+  const elo = userData.eloRate || 0;
+  const highestElo = userData.highestEloRate || elo;
+  
+  // Calculate win rate
   const wins = stats.win || stats.wins || 0;
   const loses = stats.lose || stats.losses || 0;
-  const total = wins + loses;
-  const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
-  const forfeitRate = total > 0 ? (((stats.forfeits || 0) / total) * 100).toFixed(1) : 0;
+  const totalGames = wins + loses;
+  const winRate = totalGames > 0 ? ((wins / totalGames) * 100).toFixed(1) : 0;
+  
+  // Calculate forfeit rate
+  const forfeits = stats.forfeits || 0;
+  const forfeitRate = totalGames > 0 ? ((forfeits / totalGames) * 100).toFixed(1) : 0;
   
   return {
+    elo: Math.round(elo),
+    highestElo: Math.round(highestElo),
     wins,
     loses,
-    total,
+    totalGames,
     winRate,
     forfeitRate,
-    elo: Math.round(player.eloRate || 0),
     bestTime: stats.fastest_win || 0,
     avgTime: stats.average_time || 0,
     kills: stats.kills || 0,
     deaths: stats.deaths || 0,
-    kd: stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills || 0
+    kd: stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills || '0.00',
+    rank: userData.eloRank || 'N/A'
   };
 };
 
-// ==================== SORTING FUNCTIONS ====================
-const sortPlayers = (players, sortBy, sortDirection) => {
-  if (!Array.isArray(players)) return [];
-  
-  const sorted = [...players];
-  
-  const sortFunctions = {
-    rank: (a, b) => {
-      const rankA = a.globalRank || 9999;
-      const rankB = b.globalRank || 9999;
-      return sortDirection === 'asc' ? rankA - rankB : rankB - rankA;
-    },
-    elo: (a, b) => {
-      const eloA = a.eloRate || 0;
-      const eloB = b.eloRate || 0;
-      return sortDirection === 'asc' ? eloA - eloB : eloB - eloA;
-    },
-    name: (a, b) => {
-      const nameA = (a.nickname || a.username || '').toLowerCase();
-      const nameB = (b.nickname || b.username || '').toLowerCase();
-      return sortDirection === 'asc' 
-        ? nameA.localeCompare(nameB)
-        : nameB.localeCompare(nameA);
-    },
-    winrate: (a, b) => {
-      const statsA = a.statistics || {};
-      const statsB = b.statistics || {};
-      const winsA = statsA.win || statsA.wins || 0;
-      const losesA = statsA.lose || statsA.losses || 0;
-      const winsB = statsB.win || statsB.wins || 0;
-      const losesB = statsB.lose || statsB.losses || 0;
-      const totalA = winsA + losesA;
-      const totalB = winsB + losesB;
-      const rateA = totalA > 0 ? (winsA / totalA) * 100 : 0;
-      const rateB = totalB > 0 ? (winsB / totalB) * 100 : 0;
-      return sortDirection === 'asc' ? rateA - rateB : rateB - rateA;
-    },
-    besttime: (a, b) => {
-      const timeA = a.statistics?.fastest_win || 999999999;
-      const timeB = b.statistics?.fastest_win || 999999999;
-      return sortDirection === 'asc' ? timeA - timeB : timeB - timeA;
-    },
-    avgtime: (a, b) => {
-      const timeA = a.statistics?.average_time || 999999999;
-      const timeB = b.statistics?.average_time || 999999999;
-      return sortDirection === 'asc' ? timeA - timeB : timeB - timeA;
-    }
-  };
-
-  if (sortFunctions[sortBy]) {
-    sorted.sort(sortFunctions[sortBy]);
-  } else {
-    sorted.sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0));
-  }
-  
-  return sorted.map((player, index) => ({
-    ...player,
-    globalRank: index + 1
-  }));
+// ==================== SEASON INFO COMPONENT ====================
+const SeasonInfo = ({ season, daysLeft }) => {
+  return (
+    <div className="bg-gradient-to-r from-green-900/80 to-emerald-800/80 rounded-lg p-4 border-2 border-yellow-500">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Calendar className="w-8 h-8 text-yellow-400" />
+          <div>
+            <p className="text-sm text-green-300 font-bold minecraft-font">MÙA HIỆN TẠI</p>
+            <p className="text-2xl font-bold text-white minecraft-font">SEASON {season}</p>
+          </div>
+        </div>
+        
+        {daysLeft !== null && (
+          <div className="text-right">
+            <p className="text-sm text-yellow-300 font-bold minecraft-font">CÒN LẠI</p>
+            <div className="flex items-center gap-2">
+              <div className="bg-red-600 px-3 py-1 rounded-lg">
+                <p className="text-xl font-bold text-white minecraft-font">{daysLeft}</p>
+              </div>
+              <p className="text-white font-bold">NGÀY</p>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      {daysLeft !== null && daysLeft <= 7 && (
+        <div className="mt-3 bg-yellow-900/50 border border-yellow-600 rounded p-2">
+          <p className="text-yellow-300 text-sm text-center minecraft-font">
+            ⚠️ MÙA SẮP KẾT THÚC! ⚠️
+          </p>
+        </div>
+      )}
+    </div>
+  );
 };
 
 // ==================== PLAYER DETAIL MODAL ====================
 const PlayerDetailModal = ({ player, stats, onClose }) => {
   if (!player) return null;
   
-  const playerStats = calculateStats(player, stats);
-  const playerUrl = `https://mcsrranked.com/users/${player.uuid}`;
+  const playerStats = stats || calculateStats(player);
+  const playerUrl = `https://mcsrranked.com/stats/${player.username || player.nickname || player.uuid}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-green-600 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-        <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b border-green-800 flex justify-between items-center">
-          <div className="flex items-center gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 border-4 border-green-500 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+        <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b-4 border-green-900 flex justify-between items-center">
+          <div className="flex items-center gap-4">
             <img
-              src={getPlayerSkin(player.uuid)}
+              src={getPlayerHead(player.uuid)}
               alt={player.nickname}
-              className="w-16 h-16 rounded-lg border-2 border-yellow-400"
-              onError={(e) => {
-                e.target.src = getPlayerAvatar(player.uuid);
-              }}
+              className="w-12 h-12 rounded-lg border-2 border-yellow-400"
             />
             <div>
-              <h2 className="text-2xl font-bold text-white">
+              <h2 className="text-2xl font-bold text-white minecraft-font">
                 {player.nickname || player.username}
               </h2>
-              <p className="text-green-300">#{player.globalRank} • {playerStats.elo} ELO</p>
+              <p className="text-green-300">
+                #{player.globalRank} • {playerStats?.elo || 0} ELO
+              </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <a
               href={playerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition"
-              title="Xem trang chính thức"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-bold flex items-center gap-2 transition minecraft-font text-sm"
             >
-              <ExternalLink className="w-5 h-5 text-white" />
+              <ExternalLink className="w-4 h-4" />
+              TRANG CHÍNH THỨC
             </a>
             <button
               onClick={onClose}
-              className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold flex items-center gap-2 transition minecraft-font text-sm"
             >
-              <X className="w-5 h-5 text-white" />
+              <X className="w-4 h-4" />
+              ĐÓNG
             </button>
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
           {/* Iframe */}
           <div className="mb-6">
-            <div className="flex items-center gap-2 mb-2">
-              <ExternalLink className="w-5 h-5 text-green-400" />
-              <h3 className="text-lg font-bold text-white">Thông tin chính thức</h3>
+            <div className="flex items-center gap-2 mb-3">
+              <Globe className="w-6 h-6 text-green-400" />
+              <h3 className="text-xl font-bold text-white minecraft-font">THÔNG TIN CHI TIẾT</h3>
             </div>
-            <div className="bg-black rounded-lg overflow-hidden border border-gray-700">
+            <div className="bg-black rounded-lg overflow-hidden border-2 border-gray-700">
               <iframe
                 src={playerUrl}
-                className="w-full h-96"
+                className="w-full h-[500px]"
                 title={`MCSR Profile - ${player.nickname || player.username}`}
                 sandbox="allow-same-origin allow-scripts"
               />
@@ -230,194 +241,73 @@ const PlayerDetailModal = ({ player, stats, onClose }) => {
 
           {/* Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <Award className="w-5 h-5 text-green-400" />
-                <span className="text-sm text-gray-400">Win Rate</span>
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-green-500">
+              <div className="flex items-center gap-2 mb-3">
+                <Trophy className="w-5 h-5 text-yellow-400" />
+                <span className="text-sm text-gray-400 minecraft-font">ELO</span>
               </div>
-              <p className="text-2xl font-bold text-green-400">{playerStats.winRate}%</p>
-              <p className="text-xs text-gray-500">{playerStats.wins}W - {playerStats.loses}L</p>
+              <p className="text-3xl font-bold text-yellow-400 minecraft-font">{playerStats?.elo || 0}</p>
+              <p className="text-xs text-gray-500 mt-1">Cao nhất: {playerStats?.highestElo || 0}</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-blue-500">
+              <div className="flex items-center gap-2 mb-3">
+                <Percent className="w-5 h-5 text-green-400" />
+                <span className="text-sm text-gray-400 minecraft-font">WIN RATE</span>
+              </div>
+              <p className="text-3xl font-bold text-green-400 minecraft-font">{playerStats?.winRate || 0}%</p>
+              <p className="text-xs text-gray-500 mt-1">{playerStats?.wins || 0}W {playerStats?.loses || 0}L</p>
+            </div>
+
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-purple-500">
+              <div className="flex items-center gap-2 mb-3">
                 <Clock className="w-5 h-5 text-blue-400" />
-                <span className="text-sm text-gray-400">Best Time</span>
+                <span className="text-sm text-gray-400 minecraft-font">BEST TIME</span>
               </div>
-              <p className="text-2xl font-bold text-blue-400">{formatTime(playerStats.bestTime)}</p>
+              <p className="text-2xl font-bold text-blue-400 minecraft-font">{formatTime(playerStats?.bestTime || 0)}</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-5 h-5 text-yellow-400" />
-                <span className="text-sm text-gray-400">Avg Time</span>
-              </div>
-              <p className="text-2xl font-bold text-yellow-400">{formatTime(playerStats.avgTime)}</p>
-            </div>
-
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-red-500">
+              <div className="flex items-center gap-2 mb-3">
                 <AlertCircle className="w-5 h-5 text-red-400" />
-                <span className="text-sm text-gray-400">Forfeit Rate</span>
+                <span className="text-sm text-gray-400 minecraft-font">FORFEIT RATE</span>
               </div>
-              <p className="text-2xl font-bold text-red-400">{playerStats.forfeitRate}%</p>
+              <p className="text-3xl font-bold text-red-400 minecraft-font">{playerStats?.forfeitRate || 0}%</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <Trophy className="w-5 h-5 text-purple-400" />
-                <span className="text-sm text-gray-400">K/D Ratio</span>
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-yellow-500">
+              <div className="flex items-center gap-2 mb-3">
+                <Timer className="w-5 h-5 text-yellow-400" />
+                <span className="text-sm text-gray-400 minecraft-font">AVG TIME</span>
               </div>
-              <p className="text-2xl font-bold text-purple-400">{playerStats.kd}</p>
-              <p className="text-xs text-gray-500">{playerStats.kills}K - {playerStats.deaths}D</p>
+              <p className="text-2xl font-bold text-yellow-400 minecraft-font">{formatTime(playerStats?.avgTime || 0)}</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <BarChart3 className="w-5 h-5 text-orange-400" />
-                <span className="text-sm text-gray-400">Total Matches</span>
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-orange-500">
+              <div className="flex items-center gap-2 mb-3">
+                <Sword className="w-5 h-5 text-orange-400" />
+                <span className="text-sm text-gray-400 minecraft-font">K/D RATIO</span>
               </div>
-              <p className="text-2xl font-bold text-orange-400">{playerStats.total}</p>
+              <p className="text-3xl font-bold text-orange-400 minecraft-font">{playerStats?.kd || '0.00'}</p>
+              <p className="text-xs text-gray-500 mt-1">{playerStats?.kills || 0}K {playerStats?.deaths || 0}D</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <User className="w-5 h-5 text-cyan-400" />
-                <span className="text-sm text-gray-400">Current ELO</span>
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-cyan-500">
+              <div className="flex items-center gap-2 mb-3">
+                <BarChart3 className="w-5 h-5 text-cyan-400" />
+                <span className="text-sm text-gray-400 minecraft-font">TOTAL MATCHES</span>
               </div>
-              <p className="text-2xl font-bold text-cyan-400">{playerStats.elo}</p>
+              <p className="text-3xl font-bold text-cyan-400 minecraft-font">{playerStats?.totalGames || 0}</p>
             </div>
 
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <Crown className="w-5 h-5 text-yellow-400" />
-                <span className="text-sm text-gray-400">Global Rank</span>
+            <div className="bg-gray-800/70 rounded-lg p-4 border-2 border-pink-500">
+              <div className="flex items-center gap-2 mb-3">
+                <Crown className="w-5 h-5 text-pink-400" />
+                <span className="text-sm text-gray-400 minecraft-font">GLOBAL RANK</span>
               </div>
-              <p className="text-2xl font-bold text-yellow-400">#{player.globalRank}</p>
+              <p className="text-3xl font-bold text-pink-400 minecraft-font">#{playerStats?.rank || 'N/A'}</p>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==================== SORT HEADER COMPONENT ====================
-const SortHeader = ({ label, sortKey, currentSort, sortDirection, onClick }) => {
-  const isActive = currentSort === sortKey;
-  
-  return (
-    <button
-      onClick={() => onClick(sortKey)}
-      className={`flex items-center gap-1 px-3 py-2 rounded text-sm font-medium ${
-        isActive 
-          ? 'bg-green-700 text-green-300' 
-          : 'text-gray-400 hover:bg-gray-800 hover:text-gray-300'
-      }`}
-    >
-      <span>{label}</span>
-      {isActive && (
-        <span className="text-xs">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-      )}
-    </button>
-  );
-};
-
-// ==================== PLAYER ROW COMPONENT ====================
-const PlayerRow = ({ player, onClick }) => {
-  const stats = calculateStats(player);
-  
-  return (
-    <div
-      onClick={() => onClick(player)}
-      className="bg-gray-800/60 hover:bg-gray-700/60 rounded-lg p-4 transition-all duration-200 hover:scale-[1.02] cursor-pointer border border-gray-700 hover:border-green-500 group"
-    >
-      <div className="flex items-center justify-between">
-        {/* Left: Rank and Player Info */}
-        <div className="flex items-center gap-4 flex-1">
-          <div className="w-12 text-center">
-            {getRankIcon(player.globalRank)}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <img
-                src={getPlayerSkin(player.uuid)}
-                alt={player.nickname}
-                className="w-14 h-14 rounded-lg border-2 border-green-500 group-hover:border-yellow-400 transition"
-                onError={(e) => {
-                  e.target.src = getPlayerAvatar(player.uuid);
-                }}
-              />
-              <div className="absolute -bottom-1 -right-1 bg-green-600 text-white text-xs px-2 py-1 rounded-full">
-                #{player.globalRank}
-              </div>
-            </div>
-            
-            <div className="min-w-0">
-              <p className="font-bold text-lg text-white truncate">
-                {player.nickname || player.username || 'Unknown'}
-              </p>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-sm font-bold text-green-400 bg-green-900/30 px-2 py-1 rounded">
-                  {stats.elo} ELO
-                </span>
-                <span className="text-sm text-gray-400">
-                  {stats.wins}W {stats.loses}L
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Center: Stats */}
-        <div className="hidden lg:flex items-center gap-6">
-          <div className="text-center">
-            <p className="text-xs text-gray-400">Win Rate</p>
-            <p className="text-lg font-bold text-green-400">{stats.winRate}%</p>
-          </div>
-          
-          <div className="text-center">
-            <p className="text-xs text-gray-400">Best Time</p>
-            <p className="text-lg font-bold text-blue-400">{formatTime(stats.bestTime)}</p>
-          </div>
-          
-          <div className="text-center">
-            <p className="text-xs text-gray-400">Avg Time</p>
-            <p className="text-lg font-bold text-yellow-400">{formatTime(stats.avgTime)}</p>
-          </div>
-          
-          <div className="text-center">
-            <p className="text-xs text-gray-400">Forfeit</p>
-            <p className="text-lg font-bold text-red-400">{stats.forfeitRate}%</p>
-          </div>
-        </div>
-
-        {/* Right: Click indicator */}
-        <div className="flex items-center">
-          <div className="bg-green-700 group-hover:bg-green-600 p-2 rounded-lg transition">
-            <ExternalLink className="w-5 h-5 text-white" />
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Stats */}
-      <div className="lg:hidden grid grid-cols-4 gap-2 mt-4 pt-4 border-t border-gray-700">
-        <div className="text-center">
-          <p className="text-xs text-gray-400">Win Rate</p>
-          <p className="text-sm font-bold text-green-400">{stats.winRate}%</p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-gray-400">Best</p>
-          <p className="text-sm font-bold text-blue-400">{formatTime(stats.bestTime)}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-gray-400">Avg</p>
-          <p className="text-sm font-bold text-yellow-400">{formatTime(stats.avgTime)}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-gray-400">Forfeit</p>
-          <p className="text-sm font-bold text-red-400">{stats.forfeitRate}%</p>
         </div>
       </div>
     </div>
@@ -432,77 +322,67 @@ export default function MCSRLeaderboardPro() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [currentSeason, setCurrentSeason] = useState('2');
-  const [sortBy, setSortBy] = useState('rank');
-  const [sortDirection, setSortDirection] = useState('asc');
+  const [loadingProgress, setLoadingProgress] = useState({ loaded: 0, total: 0 });
   const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [playerStats, setPlayerStats] = useState({});
+  const [seasonInfo, setSeasonInfo] = useState({ number: 2, daysLeft: null });
+  const [sortConfig, setSortConfig] = useState({ key: 'globalRank', direction: 'asc' });
 
   useEffect(() => {
     fetchLeaderboard();
   }, []);
-
-  useEffect(() => {
-    if (!Array.isArray(players)) return;
-    
-    if (searchQuery.trim() === '') {
-      const sorted = sortPlayers(players, sortBy, sortDirection);
-      setFilteredPlayers(sorted);
-    } else {
-      const query = searchQuery.toLowerCase();
-      const filtered = players.filter(player => {
-        const nickname = (player.nickname || '').toLowerCase();
-        const username = (player.username || '').toLowerCase();
-        return nickname.includes(query) || username.includes(query);
-      });
-      const sorted = sortPlayers(filtered, sortBy, sortDirection);
-      setFilteredPlayers(sorted);
-    }
-  }, [searchQuery, players, sortBy, sortDirection]);
 
   const fetchLeaderboard = async () => {
     try {
       setLoading(true);
       setRefreshing(true);
       setError(null);
+      setLoadingProgress({ loaded: 0, total: 0 });
 
-      const seasonNumber = await apiService.getSeasonInfo();
-      setCurrentSeason(seasonNumber.toString());
+      // Lấy thông tin mùa hiện tại
+      const seasonData = await apiService.getCurrentSeason();
+      const daysLeft = seasonData.endsAt ? calculateDaysLeft(seasonData.endsAt) : null;
+      setSeasonInfo({ number: seasonData.number, daysLeft });
 
+      // Lấy danh sách người chơi
       const users = await apiService.getLeaderboard('VN', 2, 100);
-      
-      const playerArray = Array.isArray(users) ? users : [];
-      
-      // Fetch detailed stats for each player
-      const playersWithStats = await Promise.all(
-        playerArray.slice(0, 50).map(async (player) => {
+      setLoadingProgress({ loaded: 0, total: users.length });
+
+      // Tải chi tiết từng người chơi
+      const playersWithDetails = [];
+      for (let i = 0; i < users.length; i++) {
+        const user = users[i];
+        if (user && user.username) {
           try {
-            const stats = await apiService.getUserStats(player.uuid, seasonNumber);
-            return {
-              ...player,
-              statistics: stats || player.statistics
-            };
+            const details = await apiService.getUserDetails(user.username);
+            if (details) {
+              playersWithDetails.push({
+                ...user,
+                ...details,
+                globalRank: i + 1
+              });
+            }
           } catch (err) {
-            return player;
+            console.error(`Error loading ${user.username}:`, err);
           }
-        })
-      );
+        }
+        setLoadingProgress({ loaded: i + 1, total: users.length });
+      }
 
-      const vnPlayers = playersWithStats
-        .filter(player => player && typeof player === 'object')
-        .sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0))
-        .map((player, index) => ({
-          ...player,
-          globalRank: index + 1
-        }));
+      const sortedPlayers = [...playersWithDetails].sort((a, b) => {
+        const eloA = a.eloRate || 0;
+        const eloB = b.eloRate || 0;
+        return eloB - eloA;
+      }).map((player, index) => ({
+        ...player,
+        globalRank: index + 1
+      }));
 
-      setPlayers(vnPlayers);
-      const sorted = sortPlayers(vnPlayers, sortBy, sortDirection);
-      setFilteredPlayers(sorted);
+      setPlayers(sortedPlayers);
+      setFilteredPlayers(sortedPlayers);
     } catch (err) {
       console.error('Error fetching leaderboard:', err);
       setError({
-        title: 'Không thể tải dữ liệu',
+        title: 'KHÔNG THỂ TẢI DỮ LIỆU',
         message: 'Vui lòng kiểm tra kết nối internet và thử lại sau.',
         details: err.message || 'Unknown error'
       });
@@ -512,52 +392,114 @@ export default function MCSRLeaderboardPro() {
     }
   };
 
-  const handlePlayerClick = async (player) => {
-    setSelectedPlayer(player);
+  // Tìm kiếm
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredPlayers(players);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = players.filter(player => {
+      const nickname = (player.nickname || '').toLowerCase();
+      const username = (player.username || '').toLowerCase();
+      return nickname.includes(query) || username.includes(query);
+    });
     
-    // Fetch detailed stats if not already loaded
-    if (!playerStats[player.uuid]) {
-      try {
-        const stats = await apiService.getUserStats(player.uuid, currentSeason);
-        setPlayerStats(prev => ({
-          ...prev,
-          [player.uuid]: stats
-        }));
-      } catch (err) {
-        console.error('Error fetching player stats:', err);
-      }
-    }
-  };
+    setFilteredPlayers(filtered);
+  }, [searchQuery, players]);
 
+  // Sắp xếp
   const handleSort = (key) => {
-    if (sortBy === key) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(key);
-      setSortDirection('desc');
-    }
+    const direction = sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc';
+    setSortConfig({ key, direction });
+    
+    const sorted = [...filteredPlayers].sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (key) {
+        case 'name':
+          aValue = (a.nickname || a.username || '').toLowerCase();
+          bValue = (b.nickname || b.username || '').toLowerCase();
+          break;
+        case 'elo':
+          aValue = a.eloRate || 0;
+          bValue = b.eloRate || 0;
+          break;
+        case 'winRate':
+          const statsA = calculateStats(a);
+          const statsB = calculateStats(b);
+          aValue = parseFloat(statsA?.winRate || 0);
+          bValue = parseFloat(statsB?.winRate || 0);
+          break;
+        case 'bestTime':
+          const bestA = a.statistics?.fastest_win || 999999999;
+          const bestB = b.statistics?.fastest_win || 999999999;
+          aValue = bestA;
+          bValue = bestB;
+          break;
+        case 'forfeitRate':
+          const statsA2 = calculateStats(a);
+          const statsB2 = calculateStats(b);
+          aValue = parseFloat(statsA2?.forfeitRate || 0);
+          bValue = parseFloat(statsB2?.forfeitRate || 0);
+          break;
+        default:
+          aValue = a.globalRank || 9999;
+          bValue = b.globalRank || 9999;
+      }
+      
+      if (direction === 'asc') {
+        return aValue > bValue ? 1 : -1;
+      } else {
+        return aValue < bValue ? 1 : -1;
+      }
+    });
+    
+    setFilteredPlayers(sorted);
   };
-
-  const totalPlayers = players.length;
-  const avgElo = totalPlayers > 0 
-    ? Math.round(players.reduce((sum, p) => sum + (p.eloRate || 0), 0) / totalPlayers)
-    : 0;
-  const topElo = players[0]?.eloRate ? Math.round(players[0].eloRate).toString() : '0';
 
   if (loading) {
+    const progress = loadingProgress.total > 0 
+      ? Math.round((loadingProgress.loaded / loadingProgress.total) * 100)
+      : 0;
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="relative w-20 h-20 mx-auto mb-4">
+        {/* Header Banner */}
+        <div 
+          className="w-full h-48 bg-cover bg-center"
+          style={{
+            backgroundImage: 'url(https://i.imgur.com/3JQZ8hq.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          }}
+        />
+        
+        <div className="flex items-center justify-center min-h-[calc(100vh-12rem)]">
+          <div className="text-center p-8 bg-gray-900/80 rounded-xl border-2 border-green-500 max-w-md">
+            <div className="relative w-20 h-20 mx-auto mb-6">
               <div className="absolute inset-0 border-4 border-green-500/30 rounded-full"></div>
               <div className="absolute inset-0 border-4 border-green-400 border-t-transparent rounded-full animate-spin"></div>
             </div>
-            <p className="text-white text-2xl font-bold animate-pulse">
-              ĐANG TẢI DỮ LIỆU...
-            </p>
-            <p className="text-green-400 text-sm mt-2">
-              Đang tải thông tin người chơi từ MCSR Ranked
+            
+            <p className="text-2xl font-bold text-white mb-4 minecraft-font">ĐANG TẢI DỮ LIỆU</p>
+            
+            <div className="mb-6">
+              <div className="flex justify-between text-sm text-gray-400 mb-2">
+                <span>Đã tải: {loadingProgress.loaded}/{loadingProgress.total}</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-3">
+                <div 
+                  className="bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+            
+            <p className="text-green-400 text-sm">
+              Đang tải thông tin {loadingProgress.loaded} người chơi Việt Nam...
             </p>
           </div>
         </div>
@@ -568,23 +510,33 @@ export default function MCSRLeaderboardPro() {
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-red-900 to-gray-900">
-        <div className="flex items-center justify-center min-h-screen p-4">
-          <div className="text-center p-6 bg-gray-900/90 rounded-xl border border-red-500 max-w-md w-full">
-            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">
+        {/* Header Banner */}
+        <div 
+          className="w-full h-48 bg-cover bg-center"
+          style={{
+            backgroundImage: 'url(https://i.imgur.com/3JQZ8hq.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          }}
+        />
+        
+        <div className="flex items-center justify-center min-h-[calc(100vh-12rem)] p-4">
+          <div className="text-center p-8 bg-gray-900/90 rounded-xl border-2 border-red-500 max-w-md w-full">
+            <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-6" />
+            <h2 className="text-2xl font-bold text-white mb-4 minecraft-font">
               {error.title}
             </h2>
-            <p className="text-gray-300 mb-4">{error.message}</p>
-            <div className="flex flex-col gap-2">
+            <p className="text-gray-300 mb-6">{error.message}</p>
+            <div className="flex flex-col gap-3">
               <button
                 onClick={fetchLeaderboard}
-                className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold transition"
+                className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold transition minecraft-font"
               >
                 THỬ LẠI
               </button>
               <button
                 onClick={() => window.location.reload()}
-                className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-bold transition"
+                className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-bold transition minecraft-font"
               >
                 TẢI LẠI TRANG
               </button>
@@ -595,194 +547,310 @@ export default function MCSRLeaderboardPro() {
     );
   }
 
+  const totalPlayers = players.length;
+  const avgElo = totalPlayers > 0 
+    ? Math.round(players.reduce((sum, p) => sum + (p.eloRate || 0), 0) / totalPlayers)
+    : 0;
+  const topElo = players[0]?.eloRate ? Math.round(players[0].eloRate).toString() : '0';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900 text-white">
-      <div className="container mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex flex-col items-center gap-3 mb-6">
-            <div className="flex items-center justify-center gap-3">
-              <Trophy className="w-10 h-10 text-yellow-400" />
-              <h1 className="text-3xl md:text-4xl font-bold">
-                MCSR VIỆT NAM LEADERBOARD
+      {/* Header Banner */}
+      <div 
+        className="w-full h-64 bg-cover bg-center relative"
+        style={{
+          backgroundImage: 'url(https://i.imgur.com/3JQZ8hq.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
+        }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent" />
+        <div className="relative z-10 container mx-auto px-4 h-full flex flex-col justify-end pb-8">
+          <div className="flex flex-col md:flex-row justify-between items-end gap-6">
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold text-yellow-400 mb-2 minecraft-font">
+                MCSR VIỆT NAM
               </h1>
-              <Trophy className="w-10 h-10 text-yellow-400" />
-            </div>
-            <p className="text-green-300 font-medium flex items-center gap-2 justify-center">
-              <Globe className="w-4 h-4" />
-              Season {currentSeason} • {totalPlayers} Players
-            </p>
-          </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gray-800/70 rounded-xl p-4 border border-green-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-green-300 font-bold">TOP 1 ELO</p>
-                  <p className="text-2xl font-bold text-yellow-400">{topElo}</p>
-                </div>
-                <Crown className="w-8 h-8 text-yellow-400" />
-              </div>
+              <p className="text-green-300 text-lg minecraft-font">
+                BẢNG XẾP HẠNG CHÍNH THỨC
+              </p>
             </div>
             
-            <div className="bg-gray-800/70 rounded-xl p-4 border border-blue-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-blue-300 font-bold">AVG ELO</p>
-                  <p className="text-2xl font-bold text-blue-400">{avgElo}</p>
-                </div>
-                <BarChart3 className="w-8 h-8 text-blue-400" />
-              </div>
-            </div>
-            
-            <div className="bg-gray-800/70 rounded-xl p-4 border border-purple-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-purple-300 font-bold">TOP 100</p>
-                  <p className="text-2xl font-bold text-purple-400">
-                    {Math.min(totalPlayers, 100)}
-                  </p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-purple-400" />
-              </div>
-            </div>
-            
-            <div className="bg-gray-800/70 rounded-xl p-4 border border-orange-500">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-orange-300 font-bold">SEASON</p>
-                  <p className="text-2xl font-bold text-orange-400">{currentSeason}</p>
-                </div>
-                <Flag className="w-8 h-8 text-orange-400" />
+            <div className="text-right">
+              <p className="text-3xl font-bold text-white mb-2 minecraft-font">
+                {totalPlayers} NGƯỜI CHƠI
+              </p>
+              <div className="flex items-center gap-2 justify-end">
+                <Globe className="w-5 h-5 text-green-400" />
+                <span className="text-green-300">VIỆT NAM TOP 100</span>
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Search and Controls */}
-          <div className="max-w-2xl mx-auto mb-6">
+      {/* Main Content */}
+      <div className="container mx-auto px-4 py-6 -mt-8 relative z-20">
+        {/* Season Info */}
+        <div className="mb-8">
+          <SeasonInfo 
+            season={seasonInfo.number} 
+            daysLeft={seasonInfo.daysLeft} 
+          />
+        </div>
+
+        {/* Search and Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Search Box */}
+          <div className="lg:col-span-2">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-green-400" />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-6 h-6 text-green-400" />
               <input
                 type="text"
-                placeholder="Tìm kiếm theo tên người chơi..."
+                placeholder="TÌM KIẾM THEO TÊN NGƯỜI CHƠI..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-gray-800/80 border-2 border-green-500 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-400"
+                className="w-full pl-12 pr-4 py-4 bg-gray-900/80 border-2 border-green-500 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-400 minecraft-font text-sm"
               />
             </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gray-900/60 rounded-lg p-4 border border-green-600">
+              <p className="text-sm text-green-300 minecraft-font">TOP 1 ELO</p>
+              <p className="text-2xl font-bold text-yellow-400 minecraft-font">{topElo}</p>
+            </div>
+            <div className="bg-gray-900/60 rounded-lg p-4 border border-blue-600">
+              <p className="text-sm text-blue-300 minecraft-font">AVG ELO</p>
+              <p className="text-2xl font-bold text-blue-400 minecraft-font">{avgElo}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Leaderboard Table */}
+        <div className="bg-gray-900/60 rounded-xl border-2 border-green-600 overflow-hidden mb-8">
+          {/* Table Header */}
+          <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b-2 border-green-900">
+            <div className="grid grid-cols-12 gap-4 text-sm font-bold">
+              <div className="col-span-1 text-center">
+                <button 
+                  onClick={() => handleSort('globalRank')}
+                  className="hover:text-yellow-300 transition flex items-center justify-center gap-1"
+                >
+                  RANK
+                  {sortConfig.key === 'globalRank' && (
+                    <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              </div>
+              <div className="col-span-4">
+                <button 
+                  onClick={() => handleSort('name')}
+                  className="hover:text-yellow-300 transition flex items-center gap-1"
+                >
+                  NGƯỜI CHƠI
+                  {sortConfig.key === 'name' && (
+                    <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              </div>
+              <div className="col-span-1 text-center">
+                <button 
+                  onClick={() => handleSort('elo')}
+                  className="hover:text-yellow-300 transition flex items-center justify-center gap-1"
+                >
+                  ELO
+                  {sortConfig.key === 'elo' && (
+                    <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              </div>
+              <div className="col-span-1 text-center">
+                <button 
+                  onClick={() => handleSort('winRate')}
+                  className="hover:text-yellow-300 transition flex items-center justify-center gap-1"
+                >
+                  WIN%
+                  {sortConfig.key === 'winRate' && (
+                    <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              </div>
+              <div className="col-span-1 text-center hidden md:block">
+                <button 
+                  onClick={() => handleSort('bestTime')}
+                  className="hover:text-yellow-300 transition flex items-center justify-center gap-1"
+                >
+                  BEST
+                  {sortConfig.key === 'bestTime' && (
+                    <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              </div>
+              <div className="col-span-1 text-center hidden md:block">
+                <button 
+                  onClick={() => handleSort('forfeitRate')}
+                  className="hover:text-yellow-300 transition flex items-center justify-center gap-1"
+                >
+                  FORFEIT%
+                  {sortConfig.key === 'forfeitRate' && (
+                    <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              </div>
+              <div className="col-span-2 text-center hidden lg:block">
+                <span>THỐNG KÊ</span>
+              </div>
+              <div className="col-span-1 text-center">
+                <span>CHI TIẾT</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Table Body */}
+          <div className="max-h-[500px] overflow-y-auto">
+            {filteredPlayers.map((player) => {
+              const stats = calculateStats(player);
+              
+              return (
+                <div 
+                  key={player.uuid || player.username}
+                  className="border-b border-gray-700 hover:bg-gray-800/50 transition-colors"
+                >
+                  <div className="grid grid-cols-12 gap-4 p-4 items-center">
+                    {/* Rank */}
+                    <div className="col-span-1 text-center">
+                      <div className="flex justify-center">
+                        {player.globalRank <= 3 ? (
+                          getRankIcon(player.globalRank)
+                        ) : (
+                          <span className="text-xl font-bold text-white minecraft-font">
+                            #{player.globalRank}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Player Info */}
+                    <div className="col-span-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={getPlayerHead(player.uuid)}
+                          alt={player.nickname}
+                          className="w-10 h-10 rounded-lg border border-green-500"
+                        />
+                        <div>
+                          <p className="font-bold text-white truncate minecraft-font">
+                            {player.nickname || player.username}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {player.username && player.username !== player.nickname ? `@${player.username}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ELO */}
+                    <div className="col-span-1 text-center">
+                      <p className="text-xl font-bold text-green-400 minecraft-font">
+                        {stats?.elo || 0}
+                      </p>
+                    </div>
+
+                    {/* Win Rate */}
+                    <div className="col-span-1 text-center">
+                      <p className={`text-lg font-bold ${
+                        parseFloat(stats?.winRate || 0) >= 50 ? 'text-green-400' : 'text-yellow-400'
+                      } minecraft-font`}>
+                        {stats?.winRate || 0}%
+                      </p>
+                    </div>
+
+                    {/* Best Time (Desktop only) */}
+                    <div className="col-span-1 text-center hidden md:block">
+                      <p className="text-sm font-bold text-blue-400 minecraft-font">
+                        {formatTime(stats?.bestTime || 0)}
+                      </p>
+                    </div>
+
+                    {/* Forfeit Rate (Desktop only) */}
+                    <div className="col-span-1 text-center hidden md:block">
+                      <p className={`text-sm font-bold ${
+                        parseFloat(stats?.forfeitRate || 0) > 10 ? 'text-red-400' : 'text-gray-400'
+                      } minecraft-font`}>
+                        {stats?.forfeitRate || 0}%
+                      </p>
+                    </div>
+
+                    {/* Stats (Desktop only) */}
+                    <div className="col-span-2 text-center hidden lg:block">
+                      <div className="flex items-center justify-center gap-4">
+                        <div className="text-center">
+                          <p className="text-xs text-gray-400">K/D</p>
+                          <p className="text-sm font-bold text-orange-400 minecraft-font">
+                            {stats?.kd || '0.00'}
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-gray-400">AVG</p>
+                          <p className="text-sm font-bold text-yellow-400 minecraft-font">
+                            {formatTime(stats?.avgTime || 0)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detail Button */}
+                    <div className="col-span-1 text-center">
+                      <button
+                        onClick={() => setSelectedPlayer(player)}
+                        className="px-3 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition flex items-center gap-2 mx-auto"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span className="text-sm font-bold hidden sm:inline">XEM</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* No Results */}
+          {filteredPlayers.length === 0 && (
+            <div className="text-center py-12">
+              <Search className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+              <p className="text-xl text-gray-400 minecraft-font">KHÔNG TÌM THẤY NGƯỜI CHƠI</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="text-center text-sm text-gray-500 mb-8">
+          <p className="minecraft-font">DỮ LIỆU ĐƯỢC CẬP NHẬT TỪ MCSR RANKED API</p>
+          <p className="text-xs mt-2 text-gray-600">
+            Mùa {seasonInfo.number} • Còn {seasonInfo.daysLeft || '?'} ngày • {totalPlayers} người chơi Việt Nam
+          </p>
+          <div className="flex justify-center gap-4 mt-4">
             <button
               onClick={fetchLeaderboard}
               disabled={refreshing}
-              className="mt-3 px-5 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-xl text-white font-bold transition disabled:opacity-50 flex items-center gap-2 mx-auto"
+              className="px-6 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-lg text-white font-bold transition disabled:opacity-50 flex items-center gap-2 minecraft-font text-sm"
             >
               {refreshing ? (
                 <>
                   <Loader className="w-4 h-4 animate-spin" />
-                  Đang cập nhật...
+                  ĐANG LÀM MỚI...
                 </>
               ) : (
                 <>
                   <Zap className="w-4 h-4" />
-                  Làm mới dữ liệu
+                  LÀM MỚI DỮ LIỆU
                 </>
               )}
             </button>
           </div>
-        </div>
-
-        {/* Leaderboard Section */}
-        <div className="bg-gray-900/60 rounded-xl border-2 border-green-600 overflow-hidden">
-          {/* Leaderboard Header */}
-          <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 border-b border-green-800">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-yellow-400" />
-                Bảng xếp hạng người chơi Việt Nam
-              </h2>
-              <div className="text-sm font-bold">
-                <span className="bg-green-800 px-3 py-1 rounded-lg text-green-300">
-                  {filteredPlayers.length} players
-                </span>
-              </div>
-            </div>
-
-            {/* Sort Controls */}
-            <div className="flex flex-wrap gap-1 justify-center">
-              <SortHeader
-                label="Rank"
-                sortKey="rank"
-                currentSort={sortBy}
-                sortDirection={sortDirection}
-                onClick={handleSort}
-              />
-              <SortHeader
-                label="Name"
-                sortKey="name"
-                currentSort={sortBy}
-                sortDirection={sortDirection}
-                onClick={handleSort}
-              />
-              <SortHeader
-                label="ELO"
-                sortKey="elo"
-                currentSort={sortBy}
-                sortDirection={sortDirection}
-                onClick={handleSort}
-              />
-              <SortHeader
-                label="Win Rate"
-                sortKey="winrate"
-                currentSort={sortBy}
-                sortDirection={sortDirection}
-                onClick={handleSort}
-              />
-              <SortHeader
-                label="Best Time"
-                sortKey="besttime"
-                currentSort={sortBy}
-                sortDirection={sortDirection}
-                onClick={handleSort}
-              />
-              <SortHeader
-                label="Avg Time"
-                sortKey="avgtime"
-                currentSort={sortBy}
-                sortDirection={sortDirection}
-                onClick={handleSort}
-              />
-            </div>
-          </div>
-
-          {/* Leaderboard Content */}
-          <div className="p-4 max-h-[70vh] overflow-y-auto">
-            {filteredPlayers.length === 0 ? (
-              <div className="text-center py-12">
-                <Search className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                <p className="text-xl text-gray-400">Không tìm thấy người chơi</p>
-                <p className="text-gray-500 mt-2">Thử tìm kiếm với tên khác</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredPlayers.map((player) => (
-                  <PlayerRow
-                    key={player.uuid}
-                    player={player}
-                    onClick={handlePlayerClick}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p>Dữ liệu được cập nhật từ MCSR Ranked API</p>
-          <p className="text-xs mt-1">© 2024 Minecraft Speedrunning Vietnam Leaderboard</p>
-          <p className="text-xs mt-1 text-gray-600">
-            Click vào người chơi để xem thông tin chi tiết và trang chính thức
-          </p>
         </div>
       </div>
 
@@ -790,24 +858,10 @@ export default function MCSRLeaderboardPro() {
       {selectedPlayer && (
         <PlayerDetailModal
           player={selectedPlayer}
-          stats={playerStats[selectedPlayer.uuid]}
+          stats={calculateStats(selectedPlayer)}
           onClose={() => setSelectedPlayer(null)}
         />
       )}
-
-      {/* Floating Refresh Button */}
-      <button
-        onClick={fetchLeaderboard}
-        disabled={refreshing}
-        className="fixed bottom-6 right-6 p-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-full shadow-lg hover:scale-110 transition transform disabled:opacity-50"
-        title="Làm mới dữ liệu"
-      >
-        {refreshing ? (
-          <Loader className="w-6 h-6 text-white animate-spin" />
-        ) : (
-          <Zap className="w-6 h-6 text-white" />
-        )}
-      </button>
     </div>
   );
-        }
+}
