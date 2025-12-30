@@ -14,7 +14,7 @@ import {
 
 
 // ==================== API SERVICE ====================
-const API_BASE = 'https://mcsrranked.com/api';
+const API_BASE = 'https://mcsrranked.com';
 
 const apiService = {
   async fetchWithRetry(url, retries = 3) {
