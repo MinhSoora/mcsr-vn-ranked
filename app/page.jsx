@@ -599,3 +599,75 @@ export default function MCSRLeaderboard() {
                   VỀ TRANG NÀY
                 </h3>
                 <p className="text-gray-300 text-sm font-bold">
+                  Bảng xếp hạng MCSR Ranked cho người chơi Việt Nam. Dữ liệu được cập nhật từ API chính thức.
+                </p>
+              </div>
+              <div>
+                <h3 
+                  className="text-xl font-black text-yellow-400 mb-2"
+                  style={{textShadow: '2px 2px 0 #000'}}
+                >
+                  TÍNH NĂNG
+                </h3>
+                <ul className="text-gray-300 text-sm font-bold space-y-1">
+                  <li>✓ Xem top 100 người chơi VN</li>
+                  <li>✓ Tìm kiếm người chơi</li>
+                  <li>✓ Xem lịch sử trận đấu</li>
+                  <li>✓ Chi tiết timeline và completions</li>
+                </ul>
+              </div>
+              <div>
+                <h3 
+                  className="text-xl font-black text-yellow-400 mb-2"
+                  style={{textShadow: '2px 2px 0 #000'}}
+                >
+                  LIÊN KẾT
+                </h3>
+                <div className="space-y-2">
+                  <a 
+                    href="https://mcsrranked.com" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block text-green-400 hover:text-green-300 text-sm font-bold transition"
+                  >
+                    → MCSR Ranked Official
+                  </a>
+                  <a 
+                    href="https://discord.gg/mcsrranked" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block text-green-400 hover:text-green-300 text-sm font-bold transition"
+                  >
+                    → Discord Community
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 pt-6 border-t-2 border-green-800 text-center">
+              <p className="text-gray-400 text-sm font-bold">
+                © 2024 MCSR Ranked Vietnam Leaderboard | Data từ mcsrranked.com
+              </p>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      <style jsx>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.5s ease-out forwards;
+          opacity: 0;
+        }
+      `}</style>
+    </div>
+  );
+}
