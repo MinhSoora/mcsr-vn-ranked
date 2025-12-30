@@ -32,7 +32,7 @@ export default function MCSRLeaderboard() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('https://api.mcsrranked.com/leaderboard');
+      const response = await fetch('https://mcsrranked.com/api/leaderboard?country=vn');
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
