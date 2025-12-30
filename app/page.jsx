@@ -1,4 +1,10 @@
 'use client';
+<Head>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+    rel="stylesheet"
+  />
+</Head>
 import React, { useState, useEffect } from 'react';
 import { 
   Trophy, Medal, Search, Zap, Loader, AlertCircle, 
@@ -6,15 +12,6 @@ import {
   Clock, Award, Target, X, ExternalLink, User, Users, Timer, Percent, Calendar, Sword
 } from 'lucide-react';
 
-// Thêm font Minecraft
-const style = document.createElement('style');
-style.textContent = `
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-  .minecraft-font {
-    font-family: 'Press Start 2P', cursive;
-  }
-`;
-document.head.appendChild(style);
 
 // ==================== API SERVICE ====================
 const API_BASE = 'https://mcsrranked.com/api';
