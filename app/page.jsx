@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 // ==================== API SERVICE ====================
-const API_BASE = 'https://api.mcsrranked.com/api';
+const API_BASE = 'https://api.mcsrranked.com';
 
 const apiService = {
   async fetchWithRetry(url, retries = 3) {
