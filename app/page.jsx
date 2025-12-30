@@ -670,3 +670,216 @@ export default function MCSRLeaderboardPro() {
                           </div>
                         )}
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <footer className="relative z-10 bg-gradient-to-t from-black via-black/90 to-transparent py-8 mt-16 border-t-4 border-green-800">
+          <div className="max-w-7xl mx-auto px-4">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+              <div className="text-center md:text-left">
+                <div className="flex items-center justify-center md:justify-start gap-3 mb-3">
+                  <Trophy className="w-10 h-10 text-yellow-400 animate-pulse" />
+                  <h2 
+                    className="text-2xl font-black text-white"
+                    style={{textShadow: '2px 2px 0 #000'}}
+                  >
+                    MCSR Ranked Vietnam Leaderboard
+                  </h2>
+                </div>
+                <p className="text-gray-400 font-bold">
+                  Dữ liệu được cập nhật từ API chính thức của MCSR Ranked
+                </p>
+                <p className="text-gray-500 text-sm font-bold mt-2">
+                  Dữ liệu chỉ tính người chơi Việt Nam
+                </p>
+              </div>
+              
+              <div className="flex flex-col items-center md:items-end gap-2">
+                <button 
+                  onClick={fetchLeaderboard}
+                  className="px-8 py-4 bg-gradient-to-r from-green-700 to-emerald-800 hover:from-green-600 hover:to-emerald-700 rounded-xl transition transform hover:scale-105 border-4 border-green-800 shadow-xl flex items-center gap-3 group"
+                >
+                  <Zap className="w-6 h-6 text-yellow-400 animate-pulse group-hover:animate-spin" />
+                  <span className="text-xl font-black text-white">CẬP NHẬT DỮ LIỆU</span>
+                </button>
+                <p className="text-gray-500 text-sm font-bold">
+                  Cập nhật lần cuối: {new Date().toLocaleDateString('vi-VN')}
+                </p>
+              </div>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Floating Scroll to Top */}
+      {window.scrollY > 500 && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-8 right-8 z-40 p-4 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-xl border-4 border-yellow-800 shadow-2xl hover:scale-110 transition transform animate-bounce"
+        >
+          <ChevronUp className="w-8 h-8 text-white" />
+        </button>
+      )}
+
+      {/* CSS Animations */}
+      <style jsx global>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) scale(1.1); }
+          50% { transform: translateY(-20px) scale(1.12); }
+        }
+
+        @keyframes slide-in {
+          from { 
+            opacity: 0;
+            transform: translateX(-50px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        @keyframes slide-down {
+          from { 
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes spin-slow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes spin-slow-reverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+
+        @keyframes wiggle {
+          0%, 100% { transform: rotate(0deg); }
+          25% { transform: rotate(5deg); }
+          75% { transform: rotate(-5deg); }
+        }
+
+        @keyframes bounce-slow {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+
+        .animate-float {
+          animation: float 20s ease-in-out infinite;
+        }
+
+        .animate-slide-in {
+          animation: slide-in 0.5s ease-out forwards;
+        }
+
+        .animate-slide-down {
+          animation: slide-down 0.3s ease-out forwards;
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out forwards;
+        }
+
+        .animate-spin-slow {
+          animation: spin-slow 20s linear infinite;
+        }
+
+        .animate-spin-slow-reverse {
+          animation: spin-slow-reverse 15s linear infinite;
+        }
+
+        .animate-wiggle {
+          animation: wiggle 2s ease-in-out infinite;
+        }
+
+        .animate-bounce-slow {
+          animation: bounce-slow 2s ease-in-out infinite;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+          width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.3);
+          border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: linear-gradient(to bottom, #4ade80, #16a34a);
+          border-radius: 10px;
+          border: 3px solid rgba(0, 0, 0, 0.3);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(to bottom, #22c55e, #15803d);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+          .text-7xl {
+            font-size: 4rem;
+          }
+          
+          .text-4xl {
+            font-size: 2.5rem;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .text-7xl {
+            font-size: 3rem;
+          }
+          
+          .grid-cols-3 {
+            grid-template-columns: 1fr;
+            gap: 2rem;
+          }
+          
+          .pt-16, .pt-24 {
+            padding-top: 0;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .text-7xl {
+            font-size: 2.5rem;
+          }
+          
+          .flex-wrap {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+          }
+          
+          .p-6 {
+            padding: 1rem;
+          }
+          
+          .gap-5 {
+            gap: 1rem;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
