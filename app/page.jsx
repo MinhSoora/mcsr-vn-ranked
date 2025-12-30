@@ -1,10 +1,5 @@
 'use client';
-<Head>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
-    rel="stylesheet"
-  />
-</Head>
+import Head from 'next/head';
 import React, { useState, useEffect } from 'react';
 import { 
   Trophy, Medal, Search, Zap, Loader, AlertCircle, 
