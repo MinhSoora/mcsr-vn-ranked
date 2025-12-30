@@ -37,7 +37,7 @@ export default function MCSRLeaderboardPro() {
       setError(null);
       
       // Sử dụng API mới cho leaderboard Việt Nam
-      const response = await fetch('https://mcsrranked.com/api/leaderboard?country=VN');
+      const response = await fetch('https://mcsrranked.com/api/leaderboard?country=vn');
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
