@@ -1,6 +1,5 @@
-'use client';
 import React, { useState, useEffect } from 'react';
-import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader, Check, XCircle, Percent } from 'lucide-react';
+import { Trophy, Medal, Clock, Award, Target, Search, TrendingUp, Eye, X, Zap, Flame, Star, ChevronDown, ChevronUp, Loader, Check, XCircle, Percent, Users, Swords, Heart, BarChart3, Calendar, Globe, Crown, Skull, Timer, Hash, Activity, AlertCircle, Flag, MapPin } from 'lucide-react';
 
 export default function MCSRLeaderboardPro() {
   const [players, setPlayers] = useState([]);
@@ -14,6 +13,9 @@ export default function MCSRLeaderboardPro() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [activeSeason, setActiveSeason] = useState('2');
+  const [statsView, setStatsView] = useState('overview');
+  const [playerStatsLoading, setPlayerStatsLoading] = useState({});
 
   useEffect(() => {
     fetchLeaderboard();
@@ -24,7 +26,8 @@ export default function MCSRLeaderboardPro() {
       setFilteredPlayers(players);
     } else {
       const filtered = players.filter(player => 
-        (player.nickname || '').toLowerCase().includes(searchQuery.toLowerCase())
+        (player.nickname || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (player.username || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredPlayers(filtered);
     }
@@ -36,8 +39,8 @@ export default function MCSRLeaderboardPro() {
       setRefreshing(true);
       setError(null);
       
-      // Sử dụng API mới cho leaderboard Việt Nam
-      const response = await fetch('https://api.mcsrranked.com/leaderboard?country=vn');
+      // Fetch leaderboard with Vietnamese players only
+      const response = await fetch('https://api.mcsrranked.com/api/leaderboard?country=VN');
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -49,13 +52,17 @@ export default function MCSRLeaderboardPro() {
         throw new Error('Invalid response format');
       }
       
-      // Lọc và sắp xếp người chơi Việt Nam
+      // Only Vietnamese players
       const vnPlayers = result.users
-        .filter(user => user.country === 'VN')
-        .sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0));
+        .sort((a, b) => (b.eloRate || 0) - (a.eloRate || 0))
+        .map((player, index) => ({
+          ...player,
+          globalRank: index + 1
+        }));
       
       setPlayers(vnPlayers);
       setFilteredPlayers(vnPlayers);
+      
       setLoading(false);
       setRefreshing(false);
     } catch (err) {
@@ -72,7 +79,9 @@ export default function MCSRLeaderboardPro() {
     }
 
     try {
-      const response = await fetch(`https://mcsrranked.com/api/users/${uuid}`);
+      setPlayerStatsLoading(prev => ({ ...prev, [uuid]: true }));
+      
+      const response = await fetch(`https://api.mcsrranked.com/api/users/${uuid}`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -81,12 +90,51 @@ export default function MCSRLeaderboardPro() {
       const result = await response.json();
       
       if (result.status === 'success' && result.data) {
-        setPlayerDetails(prev => ({ ...prev, [uuid]: result.data }));
-        return result.data;
+        const details = result.data;
+        
+        // Fetch statistics for the player
+        let statistics = {};
+        try {
+          const statsResponse = await fetch(`https://api.mcsrranked.com/api/users/${uuid}/statistics`);
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json();
+            if (statsData.status === 'success' && statsData.data) {
+              statistics = statsData.data;
+            }
+          }
+        } catch (err) {
+          console.log('Could not fetch statistics:', err);
+        }
+        
+        // Fetch season 2 statistics specifically
+        let season2Stats = {};
+        try {
+          const season2Response = await fetch(`https://api.mcsrranked.com/api/users/${uuid}/statistics?season=2`);
+          if (season2Response.ok) {
+            const season2Data = await season2Response.json();
+            if (season2Data.status === 'success' && season2Data.data) {
+              season2Stats = season2Data.data;
+            }
+          }
+        } catch (err) {
+          console.log('Could not fetch season 2 stats:', err);
+        }
+        
+        const fullDetails = { 
+          ...details, 
+          statistics: { ...statistics, season2: season2Stats } 
+        };
+        
+        setPlayerDetails(prev => ({ ...prev, [uuid]: fullDetails }));
+        setPlayerStatsLoading(prev => ({ ...prev, [uuid]: false }));
+        return fullDetails;
       }
+      
+      setPlayerStatsLoading(prev => ({ ...prev, [uuid]: false }));
       return null;
     } catch (err) {
       console.error('Error fetching player details:', err);
+      setPlayerStatsLoading(prev => ({ ...prev, [uuid]: false }));
       return null;
     }
   };
@@ -94,7 +142,7 @@ export default function MCSRLeaderboardPro() {
   const fetchMatchDetails = async (matchId) => {
     try {
       setMatchLoading(true);
-      const response = await fetch(`https://mcsrranked.com/api/matches/${matchId}`);
+      const response = await fetch(`https://api.mcsrranked.com/api/matches/${matchId}`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -118,14 +166,15 @@ export default function MCSRLeaderboardPro() {
     }
 
     try {
-      const response = await fetch(`https://mcsrranked.com/api/users/${uuid}/matches?count=10`);
+      // Fetch recent matches (all seasons)
+      const response = await fetch(`https://api.mcsrranked.com/api/users/${uuid}/matches?count=15`);
       
       if (!response.ok) {
         return [];
       }
       
       const result = await response.json();
-      const matches = result.status === 'success' && result.data ? result.data : [];
+      const matches = result.status === 'success' && result.data ? result.data.data || result.data : [];
       
       setPlayerMatches(prev => ({ ...prev, [uuid]: matches }));
       return matches;
@@ -165,7 +214,9 @@ export default function MCSRLeaderboardPro() {
       'second_portal': <Zap className="w-4 h-4 text-purple-400" />,
       'enter_stronghold': <Star className="w-4 h-4 text-yellow-500" />,
       'enter_end': <Award className="w-4 h-4 text-green-500" />,
-      'finish': <Trophy className="w-4 h-4 text-yellow-400" />
+      'finish': <Trophy className="w-4 h-4 text-yellow-400" />,
+      'kill': <Swords className="w-4 h-4 text-red-600" />,
+      'death': <Skull className="w-4 h-4 text-gray-600" />
     };
     return icons[type] || <Clock className="w-4 h-4 text-blue-500" />;
   };
@@ -179,7 +230,9 @@ export default function MCSRLeaderboardPro() {
       'second_portal': 'Portal 2',
       'enter_stronghold': 'Vào Stronghold',
       'enter_end': 'Vào End',
-      'finish': 'Hoàn thành'
+      'finish': 'Hoàn thành',
+      'kill': 'Hạ gục',
+      'death': 'Bị hạ gục'
     };
     return labels[type] || type;
   };
@@ -193,10 +246,10 @@ export default function MCSRLeaderboardPro() {
 
   const calculateStats = (player, playerDetail = null) => {
     // Sử dụng dữ liệu từ playerDetails nếu có
-    if (playerDetail) {
-      const stats = playerDetail.statistics || {};
-      const wins = stats.win || 0;
-      const loses = stats.lose || 0;
+    if (playerDetail && playerDetail.statistics) {
+      const stats = playerDetail.statistics.season2 || playerDetail.statistics;
+      const wins = stats.win || stats.wins || 0;
+      const loses = stats.lose || stats.losses || 0;
       const total = wins + loses;
       const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
       
@@ -210,15 +263,21 @@ export default function MCSRLeaderboardPro() {
         rank: player.eloRank || player.position || 0,
         kills: stats.kills || 0,
         deaths: stats.deaths || 0,
-        matches: total
+        assists: stats.assists || 0,
+        matches: total,
+        averageTime: stats.average_time || 0,
+        fastestWin: stats.fastest_win || 0,
+        longestWin: stats.longest_win || 0,
+        playtime: stats.playtime || 0
       };
     }
     
-    // Fallback nếu không có details
-    const wins = 0;
-    const loses = 0;
-    const total = 0;
-    const winRate = 0;
+    // Fallback từ dữ liệu player cơ bản
+    const stats = player.statistics || {};
+    const wins = stats.win || stats.wins || 0;
+    const loses = stats.lose || stats.losses || 0;
+    const total = wins + loses;
+    const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : 0;
     
     return {
       wins,
@@ -228,17 +287,40 @@ export default function MCSRLeaderboardPro() {
       elo: Math.round(player.eloRate || 0),
       highestElo: Math.round(player.highestEloRate || player.eloRate || 0),
       rank: player.eloRank || player.position || 0,
-      kills: 0,
-      deaths: 0,
-      matches: 0
+      kills: stats.kills || 0,
+      deaths: stats.deaths || 0,
+      assists: stats.assists || 0,
+      matches: total,
+      averageTime: stats.average_time || 0,
+      fastestWin: stats.fastest_win || 0,
+      longestWin: stats.longest_win || 0,
+      playtime: stats.playtime || 0
     };
+  };
+
+  const getCountryFlag = (countryCode) => {
+    const flags = {
+      'VN': '🇻🇳',
+      'US': '🇺🇸',
+      'GB': '🇬🇧',
+      'CA': '🇨🇦',
+      'AU': '🇦🇺',
+      'DE': '🇩🇪',
+      'FR': '🇫🇷',
+      'JP': '🇯🇵',
+      'KR': '🇰🇷',
+      'CN': '🇨🇳'
+    };
+    return flags[countryCode] || '🌐';
   };
 
   const handlePlayerClick = async (player) => {
     if (selectedPlayer?.uuid === player.uuid) {
       setSelectedPlayer(null);
+      setStatsView('overview');
     } else {
       setSelectedPlayer({ ...player, recentMatches: [], details: null });
+      setStatsView('overview');
       
       // Fetch player details và matches song song
       const [details, matches] = await Promise.all([
@@ -253,6 +335,181 @@ export default function MCSRLeaderboardPro() {
       } : prev);
     }
   };
+
+  const renderPlayerStats = (player, stats) => {
+    const playerDetail = selectedPlayer?.details;
+    
+    switch (statsView) {
+      case 'overview':
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard 
+              icon={<Check className="w-5 h-5 text-green-400" />}
+              label="Thắng"
+              value={stats.wins}
+              color="green"
+            />
+            <StatCard 
+              icon={<XCircle className="w-5 h-5 text-red-400" />}
+              label="Thua"
+              value={stats.loses}
+              color="red"
+            />
+            <StatCard 
+              icon={<Percent className="w-5 h-5 text-yellow-400" />}
+              label="Win Rate"
+              value={`${stats.winRate}%`}
+              color="yellow"
+            />
+            <StatCard 
+              icon={<Target className="w-5 h-5 text-purple-400" />}
+              label="K/D"
+              value={stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : stats.kills.toFixed(0)}
+              color="purple"
+            />
+          </div>
+        );
+      
+      case 'detailed':
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <StatCard 
+                icon={<Swords className="w-5 h-5 text-red-500" />}
+                label="Kills"
+                value={stats.kills}
+                color="red"
+              />
+              <StatCard 
+                icon={<Skull className="w-5 h-5 text-gray-400" />}
+                label="Deaths"
+                value={stats.deaths}
+                color="gray"
+              />
+              <StatCard 
+                icon={<Users className="w-5 h-5 text-blue-400" />}
+                label="Assists"
+                value={stats.assists}
+                color="blue"
+              />
+              <StatCard 
+                icon={<Timer className="w-5 h-5 text-green-500" />}
+                label="Thời gian trung bình"
+                value={formatTime(stats.averageTime)}
+                color="green"
+              />
+              <StatCard 
+                icon={<Zap className="w-5 h-5 text-yellow-500" />}
+                label="Thắng nhanh nhất"
+                value={formatTime(stats.fastestWin)}
+                color="yellow"
+              />
+              <StatCard 
+                icon={<Clock className="w-5 h-5 text-orange-500" />}
+                label="Thắng lâu nhất"
+                value={formatTime(stats.longestWin)}
+                color="orange"
+              />
+            </div>
+            
+            {playerDetail && playerDetail.statistics && (
+              <div className="mt-4 p-4 bg-gray-900/50 rounded-xl border border-gray-700">
+                <h5 className="text-lg font-bold text-gray-300 mb-2">Chi tiết thống kê:</h5>
+                <pre className="text-xs text-gray-400 overflow-auto max-h-40">
+                  {JSON.stringify(playerDetail.statistics, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        );
+      
+      case 'matches':
+        return selectedPlayer?.recentMatches?.length > 0 ? (
+          <div className="space-y-3">
+            {selectedPlayer.recentMatches.slice(0, 10).map((match, idx) => {
+              const isWinner = match.result?.uuid === player.uuid || match.winner === player.uuid;
+              const change = match.changes?.find(c => c.uuid === player.uuid);
+              
+              return (
+                <div 
+                  key={idx}
+                  className={`bg-gradient-to-r ${isWinner ? 'from-green-900/60 to-green-800/60 border-green-500' : 'from-red-900/60 to-red-800/60 border-red-500'} rounded-xl p-4 border-2 backdrop-blur-sm hover:scale-105 transition cursor-pointer shadow-lg`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fetchMatchDetails(match.id || match.matchId);
+                  }}
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        {isWinner ? (
+                          <div className="flex items-center gap-2 bg-green-700 px-3 py-1 rounded-lg">
+                            <Trophy className="w-4 h-4 text-yellow-400" />
+                            <span className="text-sm font-bold text-white">THẮNG</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 bg-red-700 px-3 py-1 rounded-lg">
+                            <X className="w-4 h-4 text-red-300" />
+                            <span className="text-sm font-bold text-white">THUA</span>
+                          </div>
+                        )}
+                        {change && (
+                          <span className={`text-sm font-bold px-3 py-1 rounded-lg ${(change.change || 0) >= 0 ? 'bg-green-700 text-green-300' : 'bg-red-700 text-red-300'}`}>
+                            {(change.change || 0) >= 0 ? '+' : ''}{change.change || 0} ELO
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400">
+                          Season {match.season || 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-300">
+                        <Calendar className="w-3 h-3" />
+                        {formatDate(match.date || match.timestamp)}
+                        {match.game_type && (
+                          <>
+                            <span className="mx-1">•</span>
+                            <span className="text-yellow-400">{match.game_type}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400">Thời gian</p>
+                        <p className="text-lg font-bold text-yellow-400">
+                          {formatTime(match.result?.time || match.time)}
+                        </p>
+                      </div>
+                      <div className="bg-blue-700 p-2 rounded-lg">
+                        <Eye className="w-5 h-5 text-blue-300" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <Loader className="w-10 h-10 text-green-400 mx-auto mb-3 animate-spin" />
+            <p className="text-gray-400 font-bold">Đang tải trận đấu...</p>
+          </div>
+        );
+      
+      default:
+        return null;
+    }
+  };
+
+  const StatCard = ({ icon, label, value, color }) => (
+    <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700">
+      <div className="flex items-center gap-2 mb-1">
+        {icon}
+        <span className="text-xs text-gray-400 font-bold">{label}</span>
+      </div>
+      <p className={`text-2xl font-black text-${color}-400`}>{value}</p>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -287,7 +544,7 @@ export default function MCSRLeaderboardPro() {
         <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
           <div className="bg-red-900/90 border-4 border-red-600 rounded-2xl p-8 text-white backdrop-blur-lg shadow-2xl max-w-md w-full">
             <div className="text-center mb-6">
-              <XCircle className="w-20 h-20 text-red-400 mx-auto mb-4" />
+              <AlertCircle className="w-20 h-20 text-red-400 mx-auto mb-4" />
               <p className="text-3xl font-black mb-2">{error}</p>
             </div>
             <button 
@@ -336,14 +593,14 @@ export default function MCSRLeaderboardPro() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-gradient-to-br from-green-700/50 to-green-900/50 rounded-xl p-5 border-2 border-green-500 backdrop-blur-sm">
                   <div className="flex items-center gap-2 mb-2">
-                    <Clock className="w-5 h-5 text-green-400" />
+                    <Calendar className="w-5 h-5 text-green-400" />
                     <p className="text-sm text-green-300 font-bold">NGÀY GIỜ</p>
                   </div>
                   <p className="text-xl font-black text-white">{formatDate(selectedMatch.date)}</p>
                 </div>
                 <div className="bg-gradient-to-br from-yellow-700/50 to-yellow-900/50 rounded-xl p-5 border-2 border-yellow-500 backdrop-blur-sm">
                   <div className="flex items-center gap-2 mb-2">
-                    <Zap className="w-5 h-5 text-yellow-400" />
+                    <Timer className="w-5 h-5 text-yellow-400" />
                     <p className="text-sm text-yellow-300 font-bold">THỜI GIAN</p>
                   </div>
                   <p className="text-2xl font-black text-yellow-400">
@@ -352,7 +609,7 @@ export default function MCSRLeaderboardPro() {
                 </div>
                 <div className="bg-gradient-to-br from-purple-700/50 to-purple-900/50 rounded-xl p-5 border-2 border-purple-500 backdrop-blur-sm">
                   <div className="flex items-center gap-2 mb-2">
-                    <Star className="w-5 h-5 text-purple-400" />
+                    <Hash className="w-5 h-5 text-purple-400" />
                     <p className="text-sm text-purple-300 font-bold">MÙA</p>
                   </div>
                   <p className="text-xl font-black text-white">Season {selectedMatch.season || 'N/A'}</p>
@@ -362,7 +619,7 @@ export default function MCSRLeaderboardPro() {
               {/* Players */}
               <div>
                 <h3 className="text-2xl font-black text-green-400 mb-4 flex items-center gap-2">
-                  <Award className="w-7 h-7" />
+                  <Users className="w-7 h-7" />
                   NGƯỜI CHƠI
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -374,18 +631,26 @@ export default function MCSRLeaderboardPro() {
                       <div key={idx} className={`bg-gradient-to-r ${isWinner ? 'from-yellow-900/50 to-yellow-700/50 border-yellow-500' : 'from-gray-800/50 to-gray-700/50 border-gray-600'} rounded-xl p-4 border-2 backdrop-blur-sm transform transition hover:scale-105`}>
                         <div className="flex justify-between items-center">
                           <div className="flex items-center gap-3">
-                            {isWinner && <Trophy className="w-7 h-7 text-yellow-400 animate-pulse" />}
+                            {isWinner && <Crown className="w-6 h-6 text-yellow-400 animate-pulse" />}
+                            <img 
+                              src={`https://crafatar.com/avatars/${p.uuid}?size=40&overlay`}
+                              alt={p.nickname}
+                              className="w-10 h-10 rounded-lg border-2 border-green-500"
+                              onError={(e) => {
+                                e.target.src = 'https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7?size=40&overlay';
+                              }}
+                            />
                             <div>
-                              <p className="text-xl font-black text-white">{p.nickname || p.username || 'Unknown'}</p>
-                              <p className="text-sm text-gray-400 font-bold">UUID: {p.uuid?.slice(0, 8) || 'N/A'}...</p>
+                              <p className="text-lg font-black text-white">{p.nickname || p.username || 'Unknown'}</p>
+                              <p className="text-xs text-gray-400 font-bold">UUID: {p.uuid?.slice(0, 8) || 'N/A'}...</p>
                             </div>
                           </div>
                           {change && (
                             <div className="text-right">
-                              <p className={`text-2xl font-black ${(change.change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              <p className={`text-xl font-black ${(change.change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {(change.change || 0) >= 0 ? '+' : ''}{change.change || 0}
                               </p>
-                              <p className="text-lg font-bold text-yellow-400">{change.eloRate || 0} ELO</p>
+                              <p className="text-sm font-bold text-yellow-400">{change.eloRate || 0} ELO</p>
                             </div>
                           )}
                         </div>
@@ -399,7 +664,7 @@ export default function MCSRLeaderboardPro() {
               {selectedMatch.completions && selectedMatch.completions.length > 0 && (
                 <div>
                   <h3 className="text-2xl font-black text-purple-400 mb-4 flex items-center gap-2">
-                    <Target className="w-7 h-7" />
+                    <Award className="w-7 h-7" />
                     HOÀN THÀNH
                   </h3>
                   <div className="space-y-2">
@@ -425,7 +690,7 @@ export default function MCSRLeaderboardPro() {
               {selectedMatch.timelines && selectedMatch.timelines.length > 0 && (
                 <div>
                   <h3 className="text-2xl font-black text-blue-400 mb-4 flex items-center gap-2">
-                    <Clock className="w-7 h-7" />
+                    <Activity className="w-7 h-7" />
                     TIMELINE
                   </h3>
                   <div className="space-y-4">
@@ -436,15 +701,18 @@ export default function MCSRLeaderboardPro() {
                       return (
                         <div key={player.uuid} className="bg-gradient-to-br from-blue-900/50 to-blue-700/50 rounded-xl p-5 border-2 border-blue-500 backdrop-blur-sm">
                           <p className="text-xl font-black text-white mb-4 flex items-center gap-2">
-                            <Award className="w-6 h-6 text-blue-400" />
+                            <img 
+                              src={`https://crafatar.com/avatars/${player.uuid}?size=30&overlay`}
+                              alt={player.nickname}
+                              className="w-8 h-8 rounded-lg"
+                            />
                             {player.nickname || player.username}
                           </p>
                           <div className="space-y-2">
                             {playerTimelines.sort((a, b) => a.time - b.time).map((timeline, idx) => (
                               <div 
                                 key={idx}
-                                className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg border border-blue-700/50 animate-slide-in"
-                                style={{animationDelay: `${idx * 50}ms`}}
+                                className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-lg border border-blue-700/50"
                               >
                                 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center">
                                   {getTimelineIcon(timeline.type)}
@@ -461,6 +729,28 @@ export default function MCSRLeaderboardPro() {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Match Data */}
+              {selectedMatch.game_type && (
+                <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl p-5 border-2 border-gray-600 backdrop-blur-sm">
+                  <h3 className="text-2xl font-black text-gray-300 mb-4 flex items-center gap-2">
+                    <Info className="w-7 h-7" />
+                    THÔNG TIN BỔ SUNG
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-400 font-bold mb-1">Loại trận</p>
+                      <p className="text-xl font-black text-white">{selectedMatch.game_type}</p>
+                    </div>
+                    {selectedMatch.map_name && (
+                      <div>
+                        <p className="text-sm text-gray-400 font-bold mb-1">Bản đồ</p>
+                        <p className="text-xl font-black text-white">{selectedMatch.map_name}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -488,15 +778,16 @@ export default function MCSRLeaderboardPro() {
                 </h1>
                 <Trophy className="w-20 h-20 text-yellow-400 drop-shadow-2xl animate-spin-slow-reverse" />
               </div>
-              <div className="inline-block bg-gradient-to-r from-red-600 to-yellow-600 rounded-full px-8 py-3 mb-6 border-4 border-yellow-400 shadow-2xl">
+              <div className="inline-block bg-gradient-to-r from-red-600 via-yellow-500 to-green-600 rounded-full px-8 py-3 mb-6 border-4 border-yellow-400 shadow-2xl">
                 <div className="flex items-center justify-center gap-3">
-                  <span className="text-4xl">🇻🇳</span>
+                  <Flag className="w-8 h-8 text-white" />
                   <p 
                     className="text-4xl font-black text-white"
                     style={{textShadow: '3px 3px 0 #000'}}
                   >
                     VIỆT NAM
                   </p>
+                  <span className="text-4xl">🇻🇳</span>
                 </div>
               </div>
 
@@ -506,7 +797,7 @@ export default function MCSRLeaderboardPro() {
                   <Search className="absolute left-6 top-1/2 transform -translate-y-1/2 w-7 h-7 text-green-400" />
                   <input
                     type="text"
-                    placeholder="Tìm kiếm người chơi..."
+                    placeholder="Tìm kiếm người chơi Việt Nam..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-16 pr-6 py-5 bg-black/80 border-4 border-green-600 rounded-2xl text-white text-xl font-bold focus:outline-none focus:border-green-400 transition backdrop-blur-lg shadow-2xl placeholder-gray-400"
@@ -515,13 +806,13 @@ export default function MCSRLeaderboardPro() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-4 mb-6">
+              <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
                 <div className="inline-block bg-green-900/80 border-4 border-green-600 rounded-xl px-6 py-3 backdrop-blur-sm">
                   <p 
                     className="text-gray-200 text-xl font-bold"
                     style={{textShadow: '2px 2px 0 #000'}}
                   >
-                    📊 TÌM THẤY <span className="text-yellow-400 text-2xl font-black">{filteredPlayers.length}</span> NGƯỜI CHƠI
+                    🇻🇳 CÓ <span className="text-yellow-400 text-2xl font-black">{filteredPlayers.length}</span> NGƯỜI CHƠI VIỆT NAM
                   </p>
                 </div>
                 
@@ -539,6 +830,13 @@ export default function MCSRLeaderboardPro() {
                     {refreshing ? 'ĐANG CẬP NHẬT...' : 'LÀM MỚI'}
                   </span>
                 </button>
+
+                <div className="inline-block bg-yellow-900/80 border-4 border-yellow-600 rounded-xl px-6 py-3 backdrop-blur-sm">
+                  <p className="text-gray-200 text-lg font-bold flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-yellow-400" />
+                    Season: <span className="text-yellow-400 text-xl font-black">2</span>
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -549,7 +847,7 @@ export default function MCSRLeaderboardPro() {
                 <div className="pt-16 animate-slide-in" style={{animationDelay: '100ms'}}>
                   <div className="bg-gradient-to-b from-gray-300 via-gray-400 to-gray-500 rounded-t-2xl p-6 text-center border-4 border-gray-600 shadow-2xl transform hover:scale-105 transition">
                     <Medal className="w-16 h-16 text-gray-100 mx-auto mb-3 drop-shadow-2xl animate-wiggle" />
-                    <p className="text-3xl font-black text-white mb-2" style={{textShadow: '3px 3px 0 #000'}}>
+                    <p className="text-3xl font-black text-white mb-2 truncate px-2" style={{textShadow: '3px 3px 0 #000'}}>
                       {filteredPlayers[1].nickname || 'Player'}
                     </p>
                     <p className="text-2xl font-bold text-yellow-300">
@@ -565,7 +863,7 @@ export default function MCSRLeaderboardPro() {
                 <div className="animate-slide-in" style={{animationDelay: '0ms'}}>
                   <div className="bg-gradient-to-b from-yellow-300 via-yellow-400 to-yellow-500 rounded-t-2xl p-8 text-center border-4 border-yellow-600 shadow-2xl transform hover:scale-110 transition">
                     <Trophy className="w-20 h-20 text-yellow-100 mx-auto mb-4 drop-shadow-2xl animate-bounce" />
-                    <p className="text-4xl font-black text-white mb-2" style={{textShadow: '4px 4px 0 #000'}}>
+                    <p className="text-4xl font-black text-white mb-2 truncate px-2" style={{textShadow: '4px 4px 0 #000'}}>
                       {filteredPlayers[0].nickname || 'Player'}
                     </p>
                     <p className="text-3xl font-bold text-yellow-900">
@@ -581,7 +879,7 @@ export default function MCSRLeaderboardPro() {
                 <div className="pt-24 animate-slide-in" style={{animationDelay: '200ms'}}>
                   <div className="bg-gradient-to-b from-orange-300 via-orange-400 to-orange-500 rounded-t-2xl p-6 text-center border-4 border-orange-600 shadow-2xl transform hover:scale-105 transition">
                     <Medal className="w-16 h-16 text-orange-100 mx-auto mb-3 drop-shadow-2xl animate-wiggle" style={{animationDelay: '100ms'}} />
-                    <p className="text-3xl font-black text-white mb-2" style={{textShadow: '3px 3px 0 #000'}}>
+                    <p className="text-3xl font-black text-white mb-2 truncate px-2" style={{textShadow: '3px 3px 0 #000'}}>
                       {filteredPlayers[2].nickname || 'Player'}
                     </p>
                     <p className="text-2xl font-bold text-yellow-300">
@@ -601,7 +899,7 @@ export default function MCSRLeaderboardPro() {
                 <div className="text-center py-16">
                   <Search className="w-20 h-20 text-gray-500 mx-auto mb-4" />
                   <p className="text-white text-3xl font-black" style={{textShadow: '3px 3px 0 #000'}}>
-                    KHÔNG TÌM THẤY NGƯỜI CHƠI
+                    KHÔNG TÌM THẤY NGƯỜI CHƠI VIỆT NAM
                   </p>
                   <p className="text-gray-400 text-lg font-bold mt-2">Thử tìm kiếm với từ khóa khác</p>
                 </div>
@@ -611,6 +909,7 @@ export default function MCSRLeaderboardPro() {
                     const playerDetail = playerDetails[player.uuid];
                     const stats = calculateStats(player, playerDetail);
                     const isSelected = selectedPlayer?.uuid === player.uuid;
+                    const isLoading = playerStatsLoading[player.uuid];
                     
                     return (
                       <div
@@ -657,6 +956,12 @@ export default function MCSRLeaderboardPro() {
                                   Peak: {stats.highestElo}
                                 </span>
                               )}
+                              {player.country && (
+                                <span className="px-3 py-1 bg-blue-700 rounded-lg text-sm text-white font-bold border-2 border-blue-500 flex items-center gap-1">
+                                  <MapPin className="w-4 h-4" />
+                                  {player.country} {getCountryFlag(player.country)}
+                                </span>
+                              )}
                             </div>
                             <div className="flex gap-5 text-base text-gray-200 font-bold flex-wrap">
                               <span className="flex items-center gap-2 bg-green-900/50 px-3 py-1 rounded-lg">
@@ -672,21 +977,21 @@ export default function MCSRLeaderboardPro() {
                                 {stats.winRate}% Win Rate
                               </span>
                               <span className="flex items-center gap-2 bg-blue-900/50 px-3 py-1 rounded-lg">
-                                <TrendingUp className="w-5 h-5 text-blue-400" />
-                                {stats.total} Trận
+                                <Swords className="w-5 h-5 text-blue-400" />
+                                {stats.kills} Kills
                               </span>
-                              {stats.kills > 0 && (
-                                <span className="flex items-center gap-2 bg-pink-900/50 px-3 py-1 rounded-lg">
-                                  <Target className="w-5 h-5 text-pink-400" />
-                                  {stats.kills} Kills
-                                </span>
-                              )}
+                              <span className="flex items-center gap-2 bg-gray-900/50 px-3 py-1 rounded-lg">
+                                <Skull className="w-5 h-5 text-gray-400" />
+                                {stats.deaths} Deaths
+                              </span>
                             </div>
                           </div>
 
                           {/* Expand Icon */}
                           <div className="flex-shrink-0">
-                            {isSelected ? (
+                            {isLoading ? (
+                              <Loader className="w-8 h-8 text-green-400 animate-spin" />
+                            ) : isSelected ? (
                               <ChevronUp className="w-8 h-8 text-green-400 animate-bounce" />
                             ) : (
                               <ChevronDown className="w-8 h-8 text-green-400" />
@@ -694,77 +999,57 @@ export default function MCSRLeaderboardPro() {
                           </div>
                         </div>
 
-                        {/* Expanded Details - Recent Matches */}
+                        {/* Expanded Details */}
                         {isSelected && (
                           <div className="mt-6 pt-6 border-t-4 border-green-700/50 animate-slide-down">
-                            <h4 
-                              className="text-2xl font-black text-yellow-400 mb-5 flex items-center gap-2"
-                              style={{textShadow: '2px 2px 0 #000'}}
-                            >
-                              <Trophy className="w-7 h-7" />
-                              TRẬN ĐẤU GẦN ĐÂY
-                            </h4>
-                            {!selectedPlayer.recentMatches || selectedPlayer.recentMatches.length === 0 ? (
-                              <div className="text-center py-8">
-                                <Loader className="w-10 h-10 text-green-400 mx-auto mb-3 animate-spin" />
-                                <p className="text-gray-400 font-bold">Đang tải trận đấu...</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                {selectedPlayer.recentMatches.slice(0, 8).map((match, idx) => {
-                                  const isWinner = match.result?.uuid === player.uuid || match.winner === player.uuid;
-                                  const change = match.changes?.find(c => c.uuid === player.uuid);
-                                  
-                                  return (
-                                    <div 
-                                      key={idx}
-                                      className={`bg-gradient-to-r ${isWinner ? 'from-green-900/60 to-green-800/60 border-green-500' : 'from-red-900/60 to-red-800/60 border-red-500'} rounded-xl p-5 border-2 backdrop-blur-sm hover:scale-105 transition cursor-pointer shadow-lg animate-fade-in`}
-                                      style={{animationDelay: `${idx * 50}ms`}}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        fetchMatchDetails(match.id || match.matchId);
-                                      }}
-                                    >
-                                      <div className="flex justify-between items-center">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-3 mb-3">
-                                            {isWinner ? (
-                                              <div className="flex items-center gap-2 bg-green-700 px-4 py-2 rounded-lg">
-                                                <Trophy className="w-6 h-6 text-yellow-400" />
-                                                <span className="text-xl font-black text-white">THẮNG</span>
-                                              </div>
-                                            ) : (
-                                              <div className="flex items-center gap-2 bg-red-700 px-4 py-2 rounded-lg">
-                                                <X className="w-6 h-6 text-red-300" />
-                                                <span className="text-xl font-black text-white">THUA</span>
-                                              </div>
-                                            )}
-                                            {change && (
-                                              <span className={`text-lg font-black px-4 py-2 rounded-lg ${(change.change || 0) >= 0 ? 'bg-green-700 text-green-300' : 'bg-red-700 text-red-300'}`}>
-                                                {(change.change || 0) >= 0 ? '+' : ''}{change.change || 0} ELO
-                                              </span>
-                                            )}
-                                          </div>
-                                          <div className="flex items-center gap-3 text-sm text-gray-300 font-bold">
-                                            <Clock className="w-4 h-4" />
-                                            {formatDate(match.date || match.timestamp)}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                          <div className="text-right">
-                                            <p className="text-sm text-gray-400 font-bold">THỜI GIAN</p>
-                                            <p className="text-2xl font-black text-yellow-400">
-                                              {formatTime(match.result?.time || match.time)}
-                                            </p>
-                                          </div>
-                                          <div className="bg-blue-700 p-3 rounded-lg">
-                                            <Eye className="w-7 h-7 text-blue-300" />
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                            {/* Stats View Tabs */}
+                            <div className="flex gap-2 mb-6">
+                              <button
+                                onClick={() => setStatsView('overview')}
+                                className={`px-4 py-2 rounded-lg transition font-bold ${statsView === 'overview' ? 'bg-green-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <BarChart3 className="w-4 h-4" />
+                                  Tổng quan
+                                </div>
+                              </button>
+                              <button
+                                onClick={() => setStatsView('detailed')}
+                                className={`px-4 py-2 rounded-lg transition font-bold ${statsView === 'detailed' ? 'bg-blue-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Activity className="w-4 h-4" />
+                                  Chi tiết
+                                </div>
+                              </button>
+                              <button
+                                onClick={() => setStatsView('matches')}
+                                className={`px-4 py-2 rounded-lg transition font-bold ${statsView === 'matches' ? 'bg-yellow-700 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Trophy className="w-4 h-4" />
+                                  Trận đấu
+                                </div>
+                              </button>
+                            </div>
+
+                            {/* Stats Content */}
+                            {renderPlayerStats(player, stats)}
+
+                            {/* Raw Data Button */}
+                            {playerDetail && (
+                              <div className="mt-6 pt-4 border-t border-gray-700">
+                                <details className="bg-gray-900/50 rounded-xl overflow-hidden">
+                                  <summary className="p-3 bg-gray-800/50 cursor-pointer font-bold text-gray-300 flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4" />
+                                    Dữ liệu thô từ API
+                                  </summary>
+                                  <div className="p-3 bg-gray-950/50">
+                                    <pre className="text-xs text-gray-400 overflow-auto max-h-60">
+                                      {JSON.stringify(playerDetail, null, 2)}
+                                    </pre>
+                                  </div>
+                                </details>
                               </div>
                             )}
                           </div>
@@ -796,7 +1081,7 @@ export default function MCSRLeaderboardPro() {
                   Dữ liệu được cập nhật từ API chính thức của MCSR Ranked
                 </p>
                 <p className="text-gray-500 text-sm font-bold mt-2">
-                  API: https://mcsrranked.com/api
+                  API: https://api.mcsrranked.com/api
                 </p>
               </div>
               
@@ -807,7 +1092,10 @@ export default function MCSRLeaderboardPro() {
                     <span className="text-gray-400 font-bold">Trực tuyến</span>
                   </div>
                   <span className="text-gray-500 font-bold">•</span>
-                  <span className="text-gray-400 font-bold">API Status: ✅</span>
+                  <span className="text-gray-400 font-bold flex items-center gap-1">
+                    <Flag className="w-4 h-4" />
+                    Chỉ hiển thị người chơi Việt Nam
+                  </span>
                 </div>
                 <p className="text-gray-500 text-sm font-bold">
                   Cập nhật lần cuối: {new Date().toLocaleDateString('vi-VN', { 
@@ -987,4 +1275,4 @@ export default function MCSRLeaderboardPro() {
       `}</style>
     </div>
   );
-    }
+        }
