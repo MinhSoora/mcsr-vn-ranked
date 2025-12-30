@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* Thêm vào file global.css */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+.minecraft-font {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 12px; /* Kích thước nhỏ hơn vì font này to */
+  line-height: 1.5;
+}
