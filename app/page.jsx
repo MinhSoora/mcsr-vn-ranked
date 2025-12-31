@@ -161,7 +161,7 @@ export default function VNMCSRLeaderboard() {
       }}>
         <div style={{ textAlign: 'center' }}>
           <img 
-            src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSPmxvZjghEiKmWHZrb5zra6E3cf41UGeN5nfFsO6xX2g&s=10"
+            src="https://docs.mcsrranked.com/assets/img/icon_x256.png"
             alt="Loading"
             style={{ width: '120px', height: '120px', marginBottom: '20px' }}
           />
@@ -263,7 +263,7 @@ export default function VNMCSRLeaderboard() {
           marginBottom: '15px'
         }}>
           <img 
-            src="https://mcsrranked.com/img/icon_x256.png"
+            src="https://docs.mcsrranked.com/assets/img/icon_x256.png"
             alt="MCSR"
             style={{ width: '64px', height: '64px' }}
           />
@@ -346,13 +346,13 @@ export default function VNMCSRLeaderboard() {
           gap: '15px',
           marginBottom: '15px'
         }}>
-          <a href="https://discord.gg/mcsrranked" target="_blank" rel="noopener noreferrer" style={{ color: '#7289da', fontSize: '24px' }}>
+          <a href="https://discord.gg/y6HVkDxct9" target="_blank" rel="noopener noreferrer" style={{ color: '#7289da', fontSize: '24px' }}>
             <i className="fab fa-discord"></i>
           </a>
-          <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" style={{ color: '#1877f2', fontSize: '24px' }}>
+          <a href="https://www.facebook.com/share/14UpZgrsvhE/" target="_blank" rel="noopener noreferrer" style={{ color: '#1877f2', fontSize: '24px' }}>
             <i className="fab fa-facebook"></i>
           </a>
-          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style={{ color: '#fff', fontSize: '24px' }}>
+          <a href="https://github.com/minhsoora" target="_blank" rel="noopener noreferrer" style={{ color: '#fff', fontSize: '24px' }}>
             <i className="fab fa-github"></i>
           </a>
         </div>
