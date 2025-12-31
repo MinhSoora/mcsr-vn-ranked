@@ -1,17 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Settings, Download } from 'lucide-react';
 
 const API_BASE = 'https://api.mcsrranked.com';
-
-const formatTime = (ms) => {
-  if (!ms && ms !== 0) return '-';
-  const totalSeconds = ms / 1000;
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = Math.floor(totalSeconds % 60);
-  const millis = Math.floor(ms % 1000);
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
-};
 
 const getEloColor = (elo) => {
   if (elo >= 2000) return '#e74c3c';
@@ -50,8 +41,9 @@ export default function VNMCSRLeaderboard() {
   const [currentSeason, setCurrentSeason] = useState(9);
   const [seasonEndDate, setSeasonEndDate] = useState(null);
   const [countdown, setCountdown] = useState('');
-  const [statsLoaded, setStatsLoaded] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [viewMode, setViewMode] = useState('two-column'); // 'two-column' or 'popup'
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -85,7 +77,8 @@ export default function VNMCSRLeaderboard() {
     try {
       setLoading(true);
       
-      const response = await fetch(`${API_BASE}/leaderboard?type=2&country=VN&count=100`);
+      // Load all players, not just top 100
+      const response = await fetch(`${API_BASE}/leaderboard?type=2&country=VN`);
       const data = await response.json();
       
       if (data.status !== 'success' || !data.data) {
@@ -107,85 +100,16 @@ export default function VNMCSRLeaderboard() {
         rank: idx + 1,
         uuid: user.uuid,
         nickname: user.nickname,
-        elo: user.eloRate || 0,
-        bestTime: null,
-        avgTime: null,
-        winRate: null,
-        ffRate: null
+        elo: user.eloRate || 0
       }));
       
       setPlayers(basicPlayers);
       setLoading(false);
       
-      loadPlayerStats(basicPlayers);
-      
     } catch (err) {
       console.error('Error:', err);
       setLoading(false);
     }
-  };
-
-  const loadPlayerStats = async (playerList) => {
-    const batchSize = 5;
-    
-    for (let i = 0; i < playerList.length; i += batchSize) {
-      const batch = playerList.slice(i, i + batchSize);
-      
-      await Promise.all(batch.map(async (player) => {
-        try {
-          const response = await fetch(`${API_BASE}/users/${player.uuid}/matches?type=2&count=50`);
-          const data = await response.json();
-          
-          if (data.status === 'success' && data.data && data.data.matches) {
-            const matches = data.data.matches;
-            
-            if (!seasonEndDate && matches.length > 0 && matches[0].season) {
-              const firstSeason = matches[0].season;
-              if (typeof firstSeason === 'object' && firstSeason.endsAt) {
-                setSeasonEndDate(firstSeason.endsAt);
-              }
-            }
-            
-            const stats = calculateStats(matches, player.uuid);
-            
-            setPlayers(prev => prev.map(p => 
-              p.uuid === player.uuid ? { ...p, ...stats } : p
-            ));
-          }
-        } catch (err) {
-          console.error(`Error loading stats for ${player.nickname}:`, err);
-        }
-      }));
-      
-      setStatsLoaded(Math.min(i + batchSize, playerList.length));
-      await new Promise(r => setTimeout(r, 100));
-    }
-  };
-
-  const calculateStats = (matches, playerUuid) => {
-    let wins = 0, losses = 0, forfeits = 0;
-    let times = [];
-    
-    matches.forEach(match => {
-      if (match.forfeited) forfeits++;
-      
-      const isWin = match.result?.uuid === playerUuid;
-      const isLoss = match.result?.uuid && match.result.uuid !== playerUuid;
-      
-      if (isWin) wins++;
-      else if (isLoss) losses++;
-      
-      const completion = match.completions?.find(c => c.uuid === playerUuid);
-      if (completion?.time) times.push(completion.time);
-    });
-    
-    const totalMatches = wins + losses;
-    const winRate = totalMatches > 0 ? (wins / totalMatches * 100).toFixed(2) : '0.00';
-    const ffRate = matches.length > 0 ? (forfeits / matches.length * 100).toFixed(2) : '0.00';
-    const bestTime = times.length > 0 ? Math.min(...times) : null;
-    const avgTime = times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : null;
-    
-    return { bestTime, avgTime, winRate, ffRate };
   };
 
   const handleSort = (key) => {
@@ -197,15 +121,29 @@ export default function VNMCSRLeaderboard() {
     }
   };
 
+  const downloadCSV = () => {
+    const headers = ['Rank', 'Username', 'ELO'];
+    const rows = sortedPlayers.map(p => [p.rank, p.nickname, p.elo]);
+    
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mcsr-vn-leaderboard-season${currentSeason}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const sortedPlayers = [...players].sort((a, b) => {
     let valA, valB;
     switch (sortBy) {
       case 'rank': valA = a.rank; valB = b.rank; break;
       case 'elo': valA = a.elo; valB = b.elo; break;
-      case 'bestTime': valA = a.bestTime || 999999999; valB = b.bestTime || 999999999; break;
-      case 'avgTime': valA = a.avgTime || 999999999; valB = b.avgTime || 999999999; break;
-      case 'winRate': valA = parseFloat(a.winRate) || 0; valB = parseFloat(b.winRate) || 0; break;
-      case 'ffRate': valA = parseFloat(a.ffRate) || 0; valB = parseFloat(b.ffRate) || 0; break;
       default: valA = a.rank; valB = b.rank;
     }
     return sortDir === 'asc' ? valA - valB : valB - valA;
@@ -241,8 +179,73 @@ export default function VNMCSRLeaderboard() {
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
       fontFamily: '"Minecraft", monospace',
-      padding: '20px'
+      padding: '20px',
+      position: 'relative'
     }}>
+      {/* Settings Button */}
+      <button
+        onClick={() => setShowSettings(!showSettings)}
+        style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          background: '#2d5016',
+          border: '3px solid #3a6b1e',
+          color: '#fff',
+          padding: '10px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontFamily: '"Minecraft", monospace',
+          fontSize: '14px'
+        }}
+      >
+        <Settings size={20} />
+        Settings
+      </button>
+
+      {/* Settings Dropdown */}
+      {showSettings && (
+        <div style={{
+          position: 'fixed',
+          top: '70px',
+          right: '20px',
+          background: '#1a1a1a',
+          border: '3px solid #3a6b1e',
+          borderRadius: '8px',
+          padding: '15px',
+          zIndex: 1000,
+          minWidth: '200px',
+          fontFamily: '"Minecraft", monospace',
+          fontSize: '12px'
+        }}>
+          <div style={{ marginBottom: '10px', fontWeight: 'bold' }}>View Mode:</div>
+          <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="viewMode"
+              checked={viewMode === 'two-column'}
+              onChange={() => setViewMode('two-column')}
+              style={{ marginRight: '8px' }}
+            />
+            Two Column
+          </label>
+          <label style={{ display: 'block', cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="viewMode"
+              checked={viewMode === 'popup'}
+              onChange={() => setViewMode('popup')}
+              style={{ marginRight: '8px' }}
+            />
+            Popup Modal
+          </label>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{
         background: 'linear-gradient(90deg, #7cb342 0%, #558b2f 100%)',
@@ -300,7 +303,7 @@ export default function VNMCSRLeaderboard() {
         <div style={{ fontSize: '28px', fontFamily: '"Minecraft", monospace', marginBottom: '15px' }}>
           Season {currentSeason}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap', marginBottom: '15px' }}>
           <button style={{
             background: '#2d5016',
             border: '3px solid #3a6b1e',
@@ -314,36 +317,60 @@ export default function VNMCSRLeaderboard() {
           }}>
             Subscribe
           </button>
-          <button style={{
-            background: '#2d5016',
-            border: '3px solid #3a6b1e',
-            color: '#fff',
-            padding: '12px 24px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: 'bold',
-            fontFamily: '"Minecraft", monospace'
-          }}>
+          <button
+            onClick={downloadCSV}
+            style={{
+              background: '#2d5016',
+              border: '3px solid #3a6b1e',
+              color: '#fff',
+              padding: '12px 24px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              fontFamily: '"Minecraft", monospace',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <Download size={16} />
             Download Table
           </button>
         </div>
+        
+        {/* Social Links */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '15px',
+          marginBottom: '15px'
+        }}>
+          <a href="https://discord.gg/mcsrranked" target="_blank" rel="noopener noreferrer" style={{ color: '#7289da', fontSize: '24px' }}>
+            <i className="fab fa-discord"></i>
+          </a>
+          <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" style={{ color: '#1877f2', fontSize: '24px' }}>
+            <i className="fab fa-facebook"></i>
+          </a>
+          <a href="https://github.com" target="_blank" rel="noopener noreferrer" style={{ color: '#fff', fontSize: '24px' }}>
+            <i className="fab fa-github"></i>
+          </a>
+        </div>
+
         <div style={{ marginTop: '15px', fontSize: '18px', fontFamily: '"Minecraft", monospace' }}>
           End in {countdown || 'Loading...'}
         </div>
-        {statsLoaded < players.length && (
-          <div style={{ marginTop: '10px', fontSize: '14px', color: '#4CAF50', fontFamily: '"Minecraft", monospace' }}>
-            Loading stats: {statsLoaded}/{players.length}
-          </div>
-        )}
+        <div style={{ marginTop: '10px', fontSize: '14px', color: '#4CAF50', fontFamily: '"Minecraft", monospace' }}>
+          Total Players: {players.length}
+        </div>
       </div>
 
-      {/* Two Column Layout */}
+      {/* Two Column Layout or Single Column */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: selectedPlayer ? '1fr 1fr' : '1fr',
+        gridTemplateColumns: (viewMode === 'two-column' && selectedPlayer) ? '1fr 1fr' : '1fr',
         gap: '20px',
-        transition: 'all 0.3s'
+        transition: 'grid-template-columns 0.3s ease'
       }}>
         {/* Left Column - Table */}
         <div style={{
@@ -354,7 +381,7 @@ export default function VNMCSRLeaderboard() {
         }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '60px 60px 200px 100px 120px 120px 100px 100px',
+            gridTemplateColumns: '80px 80px 1fr 120px',
             background: '#1a1a1a',
             padding: '15px 20px',
             borderBottom: '2px solid #333',
@@ -367,10 +394,6 @@ export default function VNMCSRLeaderboard() {
             <div></div>
             <div>Name</div>
             <SortHeader label="Elo ▼" sortKey="elo" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-            <SortHeader label="Best time ▲" sortKey="bestTime" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-            <SortHeader label="Avg Time ▲" sortKey="avgTime" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-            <SortHeader label="Win rate ▼" sortKey="winRate" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-            <SortHeader label="FF rate" sortKey="ffRate" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
           </div>
 
           <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
@@ -380,57 +403,48 @@ export default function VNMCSRLeaderboard() {
                 onClick={() => setSelectedPlayer(player)}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '60px 60px 200px 100px 120px 120px 100px 100px',
+                  gridTemplateColumns: '80px 80px 1fr 120px',
                   padding: '12px 20px',
                   borderBottom: '1px solid #222',
                   alignItems: 'center',
                   cursor: 'pointer',
                   background: selectedPlayer?.uuid === player.uuid ? '#1a3a1a' : 'transparent',
-                  fontFamily: '"Minecraft", monospace'
+                  fontFamily: '"Minecraft", monospace',
+                  transition: 'all 0.2s ease'
                 }}
                 onMouseEnter={(e) => {
                   if (selectedPlayer?.uuid !== player.uuid) {
                     e.currentTarget.style.background = '#1a1a1a';
+                    e.currentTarget.style.transform = 'translateX(5px)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (selectedPlayer?.uuid !== player.uuid) {
                     e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.transform = 'translateX(0)';
                   }
                 }}
               >
                 <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{player.rank}</div>
                 <img 
-                  src={`https://mc-heads.net/avatar/${player.uuid}/32`}
+                  src={`https://mc-heads.net/avatar/${player.uuid}/48`}
                   alt={player.nickname}
-                  style={{ width: '32px', height: '32px', imageRendering: 'pixelated' }}
+                  style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
                   {player.nickname}
                   <span style={{ fontSize: '18px' }}>🇻🇳</span>
                 </div>
-                <div style={{ color: getEloColor(player.elo), fontWeight: 'bold', fontSize: '15px' }}>
+                <div style={{ color: getEloColor(player.elo), fontWeight: 'bold', fontSize: '18px' }}>
                   {player.elo}
-                </div>
-                <div style={{ color: '#4CAF50', fontSize: '14px' }}>
-                  {player.bestTime ? formatTime(player.bestTime) : '-'}
-                </div>
-                <div style={{ color: '#2196F3', fontSize: '14px' }}>
-                  {player.avgTime ? formatTime(player.avgTime) : '-'}
-                </div>
-                <div style={{ color: '#FFC107', fontWeight: 'bold' }}>
-                  {player.winRate ? `${player.winRate}%` : '-'}
-                </div>
-                <div style={{ color: '#F44336' }}>
-                  {player.ffRate ? `${player.ffRate}%` : '-'}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right Column - Player Stats iframe */}
-        {selectedPlayer && (
+        {/* Right Column - Player Stats iframe (Two Column Mode) */}
+        {viewMode === 'two-column' && selectedPlayer && (
           <div style={{
             background: '#0a0a0a',
             borderRadius: '8px',
@@ -439,7 +453,8 @@ export default function VNMCSRLeaderboard() {
             position: 'sticky',
             top: '20px',
             height: 'fit-content',
-            maxHeight: 'calc(100vh - 40px)'
+            maxHeight: 'calc(100vh - 40px)',
+            animation: 'slideInRight 0.3s ease'
           }}>
             <div style={{
               background: '#1a1a1a',
@@ -491,8 +506,104 @@ export default function VNMCSRLeaderboard() {
         )}
       </div>
 
+      {/* Popup Modal */}
+      {viewMode === 'popup' && selectedPlayer && (
+        <div 
+          onClick={() => setSelectedPlayer(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.9)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            padding: '20px',
+            animation: 'fadeIn 0.3s ease'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#0a0a0a',
+              borderRadius: '12px',
+              border: '3px solid #3a6b1e',
+              maxWidth: '1200px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflow: 'hidden',
+              animation: 'scaleIn 0.3s ease'
+            }}
+          >
+            <div style={{
+              background: '#1a1a1a',
+              padding: '20px',
+              borderBottom: '2px solid #333',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontFamily: '"Minecraft", monospace'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <img 
+                  src={`https://mc-heads.net/avatar/${selectedPlayer.uuid}/48`}
+                  alt={selectedPlayer.nickname}
+                  style={{ width: '48px', height: '48px', imageRendering: 'pixelated' }}
+                />
+                <div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{selectedPlayer.nickname}</div>
+                  <div style={{ fontSize: '14px', color: getEloColor(selectedPlayer.elo) }}>
+                    #{selectedPlayer.rank} • {selectedPlayer.elo} ELO
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPlayer(null)}
+                style={{
+                  background: '#2d5016',
+                  border: '2px solid #3a6b1e',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <iframe
+              src={`https://mcsrranked.com/stats/${selectedPlayer.nickname}`}
+              style={{
+                width: '100%',
+                height: 'calc(90vh - 100px)',
+                border: 'none'
+              }}
+              title={`Stats for ${selectedPlayer.nickname}`}
+            />
+          </div>
+        </div>
+      )}
+
       <style>{`
         @import url('https://fonts.cdnfonts.com/css/minecraft-4');
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+        
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        @keyframes scaleIn {
+          from { transform: scale(0.9); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes slideInRight {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
         
         ::-webkit-scrollbar {
           width: 10px;
@@ -513,4 +624,4 @@ export default function VNMCSRLeaderboard() {
       `}</style>
     </div>
   );
-                }
+    }
