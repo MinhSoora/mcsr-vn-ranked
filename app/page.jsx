@@ -93,10 +93,17 @@ export default function VNMCSRLeaderboard() {
       }
       
       // Get season info from leaderboard response
-      const { users, season, seasonEndDate: endDate } = data.data;
+      const { users, season } = data.data;
       
-      if (season) setCurrentSeason(season);
-      if (endDate) setSeasonEndDate(endDate);
+      // Season might be an object with {number, startsAt, endsAt}
+      if (season) {
+        if (typeof season === 'object' && season.number) {
+          setCurrentSeason(season.number);
+          if (season.endsAt) setSeasonEndDate(season.endsAt);
+        } else if (typeof season === 'number') {
+          setCurrentSeason(season);
+        }
+      }
       
       // Create basic player list first
       const basicPlayers = users.map((user, idx) => ({
@@ -133,8 +140,17 @@ export default function VNMCSRLeaderboard() {
           const response = await fetch(`${API_BASE}/users/${player.uuid}/matches?type=2&count=50`);
           const data = await response.json();
           
-          if (data.status === 'success' && data.data.matches) {
+          if (data.status === 'success' && data.data && data.data.matches) {
             const matches = data.data.matches;
+            
+            // Get season from first match if we don't have it yet
+            if (!seasonEndDate && matches.length > 0 && matches[0].season) {
+              const firstSeason = matches[0].season;
+              if (typeof firstSeason === 'object' && firstSeason.endsAt) {
+                setSeasonEndDate(firstSeason.endsAt);
+              }
+            }
+            
             const stats = calculateStats(matches, player.uuid);
             
             setPlayers(prev => prev.map(p => 
@@ -417,4 +433,4 @@ export default function VNMCSRLeaderboard() {
       `}</style>
     </div>
   );
-                        }
+        }
