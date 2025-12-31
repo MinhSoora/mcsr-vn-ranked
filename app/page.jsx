@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
 
 const API_BASE = 'https://api.mcsrranked.com';
 
@@ -51,6 +51,7 @@ export default function VNMCSRLeaderboard() {
   const [seasonEndDate, setSeasonEndDate] = useState(null);
   const [countdown, setCountdown] = useState('');
   const [statsLoaded, setStatsLoaded] = useState(0);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -84,7 +85,6 @@ export default function VNMCSRLeaderboard() {
     try {
       setLoading(true);
       
-      // Fetch leaderboard with season info
       const response = await fetch(`${API_BASE}/leaderboard?type=2&country=VN&count=100`);
       const data = await response.json();
       
@@ -92,10 +92,8 @@ export default function VNMCSRLeaderboard() {
         throw new Error('Failed to fetch leaderboard');
       }
       
-      // Get season info from leaderboard response
       const { users, season } = data.data;
       
-      // Season might be an object with {number, startsAt, endsAt}
       if (season) {
         if (typeof season === 'object' && season.number) {
           setCurrentSeason(season.number);
@@ -105,7 +103,6 @@ export default function VNMCSRLeaderboard() {
         }
       }
       
-      // Create basic player list first
       const basicPlayers = users.map((user, idx) => ({
         rank: idx + 1,
         uuid: user.uuid,
@@ -120,7 +117,6 @@ export default function VNMCSRLeaderboard() {
       setPlayers(basicPlayers);
       setLoading(false);
       
-      // Load stats in background
       loadPlayerStats(basicPlayers);
       
     } catch (err) {
@@ -130,7 +126,7 @@ export default function VNMCSRLeaderboard() {
   };
 
   const loadPlayerStats = async (playerList) => {
-    const batchSize = 5; // Load 5 players at a time
+    const batchSize = 5;
     
     for (let i = 0; i < playerList.length; i += batchSize) {
       const batch = playerList.slice(i, i + batchSize);
@@ -143,7 +139,6 @@ export default function VNMCSRLeaderboard() {
           if (data.status === 'success' && data.data && data.data.matches) {
             const matches = data.data.matches;
             
-            // Get season from first match if we don't have it yet
             if (!seasonEndDate && matches.length > 0 && matches[0].season) {
               const firstSeason = matches[0].season;
               if (typeof firstSeason === 'object' && firstSeason.endsAt) {
@@ -223,7 +218,8 @@ export default function VNMCSRLeaderboard() {
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        fontFamily: '"Minecraft", monospace'
       }}>
         <div style={{ textAlign: 'center' }}>
           <img 
@@ -231,7 +227,7 @@ export default function VNMCSRLeaderboard() {
             alt="Loading"
             style={{ width: '120px', height: '120px', marginBottom: '20px' }}
           />
-          <div style={{ fontSize: '24px', color: '#00ff00', fontFamily: 'monospace' }}>
+          <div style={{ fontSize: '24px', color: '#00ff00', fontFamily: '"Minecraft", monospace' }}>
             Loading...
           </div>
         </div>
@@ -244,7 +240,7 @@ export default function VNMCSRLeaderboard() {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
       color: '#fff',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontFamily: '"Minecraft", monospace',
       padding: '20px'
     }}>
       {/* Header */}
@@ -271,8 +267,7 @@ export default function VNMCSRLeaderboard() {
           <h1 style={{
             fontSize: '42px',
             margin: 0,
-            fontFamily: 'monospace',
-            fontWeight: 'bold',
+            fontFamily: '"Minecraft", monospace',
             textShadow: '4px 4px 0 rgba(0,0,0,0.3)',
             letterSpacing: '2px'
           }}>
@@ -281,7 +276,7 @@ export default function VNMCSRLeaderboard() {
         </div>
       </div>
 
-      {/* Leaderboards */}
+      {/* Leaderboards Info */}
       <div style={{
         background: '#1e3a3a',
         padding: '20px',
@@ -292,7 +287,7 @@ export default function VNMCSRLeaderboard() {
         <h2 style={{
           fontSize: '36px',
           margin: '0 0 10px 0',
-          fontFamily: 'monospace',
+          fontFamily: '"Minecraft", monospace',
           letterSpacing: '4px'
         }}>
           Leaderboards
@@ -302,7 +297,7 @@ export default function VNMCSRLeaderboard() {
           <span style={{ fontSize: '32px' }}>🏆</span>
           <span style={{ fontSize: '32px' }}>⚡</span>
         </div>
-        <div style={{ fontSize: '28px', fontFamily: 'monospace', marginBottom: '15px' }}>
+        <div style={{ fontSize: '28px', fontFamily: '"Minecraft", monospace', marginBottom: '15px' }}>
           Season {currentSeason}
         </div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
@@ -314,7 +309,8 @@ export default function VNMCSRLeaderboard() {
             borderRadius: '4px',
             cursor: 'pointer',
             fontSize: '14px',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            fontFamily: '"Minecraft", monospace'
           }}>
             Subscribe
           </button>
@@ -326,94 +322,178 @@ export default function VNMCSRLeaderboard() {
             borderRadius: '4px',
             cursor: 'pointer',
             fontSize: '14px',
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            fontFamily: '"Minecraft", monospace'
           }}>
             Download Table
           </button>
         </div>
-        <div style={{ marginTop: '15px', fontSize: '18px', fontFamily: 'monospace' }}>
+        <div style={{ marginTop: '15px', fontSize: '18px', fontFamily: '"Minecraft", monospace' }}>
           End in {countdown || 'Loading...'}
         </div>
         {statsLoaded < players.length && (
-          <div style={{ marginTop: '10px', fontSize: '14px', color: '#4CAF50' }}>
+          <div style={{ marginTop: '10px', fontSize: '14px', color: '#4CAF50', fontFamily: '"Minecraft", monospace' }}>
             Loading stats: {statsLoaded}/{players.length}
           </div>
         )}
       </div>
 
-      {/* Table */}
+      {/* Two Column Layout */}
       <div style={{
-        background: '#0a0a0a',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        border: '2px solid #333'
+        display: 'grid',
+        gridTemplateColumns: selectedPlayer ? '1fr 1fr' : '1fr',
+        gap: '20px',
+        transition: 'all 0.3s'
       }}>
+        {/* Left Column - Table */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: '60px 60px 200px 100px 120px 120px 100px 100px',
-          background: '#1a1a1a',
-          padding: '15px 20px',
-          borderBottom: '2px solid #333',
-          fontSize: '13px',
-          fontWeight: 'bold',
-          color: '#aaa'
+          background: '#0a0a0a',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          border: '2px solid #333'
         }}>
-          <SortHeader label="#" sortKey="rank" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-          <div></div>
-          <div>Name</div>
-          <SortHeader label="Elo ▼" sortKey="elo" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-          <SortHeader label="Best time ▲" sortKey="bestTime" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-          <SortHeader label="Avg Time ▲" sortKey="avgTime" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-          <SortHeader label="Win rate ▼" sortKey="winRate" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
-          <SortHeader label="FF rate" sortKey="ffRate" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '60px 60px 200px 100px 120px 120px 100px 100px',
+            background: '#1a1a1a',
+            padding: '15px 20px',
+            borderBottom: '2px solid #333',
+            fontSize: '13px',
+            fontWeight: 'bold',
+            color: '#aaa',
+            fontFamily: '"Minecraft", monospace'
+          }}>
+            <SortHeader label="#" sortKey="rank" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+            <div></div>
+            <div>Name</div>
+            <SortHeader label="Elo ▼" sortKey="elo" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+            <SortHeader label="Best time ▲" sortKey="bestTime" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+            <SortHeader label="Avg Time ▲" sortKey="avgTime" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+            <SortHeader label="Win rate ▼" sortKey="winRate" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+            <SortHeader label="FF rate" sortKey="ffRate" currentSort={sortBy} direction={sortDir} onClick={handleSort} />
+          </div>
+
+          <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {sortedPlayers.map((player) => (
+              <div
+                key={player.uuid}
+                onClick={() => setSelectedPlayer(player)}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '60px 60px 200px 100px 120px 120px 100px 100px',
+                  padding: '12px 20px',
+                  borderBottom: '1px solid #222',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  background: selectedPlayer?.uuid === player.uuid ? '#1a3a1a' : 'transparent',
+                  fontFamily: '"Minecraft", monospace'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedPlayer?.uuid !== player.uuid) {
+                    e.currentTarget.style.background = '#1a1a1a';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedPlayer?.uuid !== player.uuid) {
+                    e.currentTarget.style.background = 'transparent';
+                  }
+                }}
+              >
+                <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{player.rank}</div>
+                <img 
+                  src={`https://mc-heads.net/avatar/${player.uuid}/32`}
+                  alt={player.nickname}
+                  style={{ width: '32px', height: '32px', imageRendering: 'pixelated' }}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
+                  {player.nickname}
+                  <span style={{ fontSize: '18px' }}>🇻🇳</span>
+                </div>
+                <div style={{ color: getEloColor(player.elo), fontWeight: 'bold', fontSize: '15px' }}>
+                  {player.elo}
+                </div>
+                <div style={{ color: '#4CAF50', fontSize: '14px' }}>
+                  {player.bestTime ? formatTime(player.bestTime) : '-'}
+                </div>
+                <div style={{ color: '#2196F3', fontSize: '14px' }}>
+                  {player.avgTime ? formatTime(player.avgTime) : '-'}
+                </div>
+                <div style={{ color: '#FFC107', fontWeight: 'bold' }}>
+                  {player.winRate ? `${player.winRate}%` : '-'}
+                </div>
+                <div style={{ color: '#F44336' }}>
+                  {player.ffRate ? `${player.ffRate}%` : '-'}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          {sortedPlayers.map((player) => (
-            <div
-              key={player.uuid}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '60px 60px 200px 100px 120px 120px 100px 100px',
-                padding: '12px 20px',
-                borderBottom: '1px solid #222',
-                alignItems: 'center',
-                cursor: 'pointer'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = '#1a1a1a'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            >
-              <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{player.rank}</div>
-              <img 
-                src={`https://mc-heads.net/avatar/${player.uuid}/32`}
-                alt={player.nickname}
-                style={{ width: '32px', height: '32px', imageRendering: 'pixelated' }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
-                {player.nickname}
-                <span style={{ fontSize: '18px' }}>🇻🇳</span>
+        {/* Right Column - Player Stats iframe */}
+        {selectedPlayer && (
+          <div style={{
+            background: '#0a0a0a',
+            borderRadius: '8px',
+            border: '2px solid #333',
+            overflow: 'hidden',
+            position: 'sticky',
+            top: '20px',
+            height: 'fit-content',
+            maxHeight: 'calc(100vh - 40px)'
+          }}>
+            <div style={{
+              background: '#1a1a1a',
+              padding: '15px 20px',
+              borderBottom: '2px solid #333',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontFamily: '"Minecraft", monospace'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <img 
+                  src={`https://mc-heads.net/avatar/${selectedPlayer.uuid}/32`}
+                  alt={selectedPlayer.nickname}
+                  style={{ width: '32px', height: '32px', imageRendering: 'pixelated' }}
+                />
+                <div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold' }}>{selectedPlayer.nickname}</div>
+                  <div style={{ fontSize: '12px', color: getEloColor(selectedPlayer.elo) }}>
+                    #{selectedPlayer.rank} • {selectedPlayer.elo} ELO
+                  </div>
+                </div>
               </div>
-              <div style={{ color: getEloColor(player.elo), fontWeight: 'bold', fontSize: '15px' }}>
-                {player.elo}
-              </div>
-              <div style={{ color: '#4CAF50', fontFamily: 'monospace', fontSize: '14px' }}>
-                {player.bestTime ? formatTime(player.bestTime) : '-'}
-              </div>
-              <div style={{ color: '#2196F3', fontFamily: 'monospace', fontSize: '14px' }}>
-                {player.avgTime ? formatTime(player.avgTime) : '-'}
-              </div>
-              <div style={{ color: '#FFC107', fontWeight: 'bold' }}>
-                {player.winRate ? `${player.winRate}%` : '-'}
-              </div>
-              <div style={{ color: '#F44336' }}>
-                {player.ffRate ? `${player.ffRate}%` : '-'}
-              </div>
+              <button
+                onClick={() => setSelectedPlayer(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  padding: '5px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <X size={24} />
+              </button>
             </div>
-          ))}
-        </div>
+            <iframe
+              src={`https://mcsrranked.com/stats/${selectedPlayer.nickname}`}
+              style={{
+                width: '100%',
+                height: 'calc(100vh - 150px)',
+                border: 'none'
+              }}
+              title={`Stats for ${selectedPlayer.nickname}`}
+            />
+          </div>
+        )}
       </div>
 
       <style>{`
+        @import url('https://fonts.cdnfonts.com/css/minecraft-4');
+        
         ::-webkit-scrollbar {
           width: 10px;
         }
@@ -433,4 +513,4 @@ export default function VNMCSRLeaderboard() {
       `}</style>
     </div>
   );
-        }
+                }
