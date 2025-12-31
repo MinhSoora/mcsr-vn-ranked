@@ -161,7 +161,7 @@ export default function VNMCSRLeaderboard() {
       }}>
         <div style={{ textAlign: 'center' }}>
           <img 
-            src="https://media.tenor.com/hlKEXPvlX48AAAAi/minecraft-loading.gif"
+            src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSPmxvZjghEiKmWHZrb5zra6E3cf41UGeN5nfFsO6xX2g&s=10"
             alt="Loading"
             style={{ width: '120px', height: '120px', marginBottom: '20px' }}
           />
