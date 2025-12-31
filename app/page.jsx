@@ -1,39 +1,26 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Trophy, Medal, Search, Loader, Zap, Crown, BarChart3, TrendingUp, Flag, Globe, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trophy, Medal, Search, Loader, Zap, Crown, BarChart3, TrendingUp, Flag, Globe, AlertCircle, ChevronDown, ChevronUp, X, Clock, Target, Skull, Award } from 'lucide-react';
 
-// ==================== API SERVICE (FIXED) ====================
+// ==================== API SERVICE ====================
 const API_BASE = 'https://api.mcsrranked.com';
 
 const apiService = {
   async fetchWithRetry(url, retries = 3) {
     for (let i = 0; i < retries; i++) {
       try {
-        console.log(`[API] Fetching: ${url} (attempt ${i + 1}/${retries})`);
         const response = await fetch(url);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        console.log(`[API] Success:`, data);
-        
-        // Check for API error response
-        if (data.status === 'error') {
-          throw new Error(data.message || 'API Error');
-        }
-        
+        if (data.status === 'error') throw new Error(data.message || 'API Error');
         return data;
       } catch (err) {
-        console.error(`[API] Attempt ${i + 1} failed:`, err.message);
         if (i === retries - 1) throw err;
         await new Promise(r => setTimeout(r, 1000 * (i + 1)));
       }
     }
   },
 
-  // Get leaderboard data
   async getLeaderboard(type = 2, country = '', count = 100) {
     const params = new URLSearchParams();
     params.append('type', type.toString());
@@ -43,29 +30,44 @@ const apiService = {
     const url = `${API_BASE}/leaderboard?${params}`;
     const response = await this.fetchWithRetry(url);
     
-    // API returns { status: 'success', data: { users: [...] } }
     if (response.status === 'success' && response.data) {
       return response.data;
     }
-    
     throw new Error('Invalid response format');
   },
 
-  // Get user profile with full stats
-  async getUserProfile(uuid) {
-    const url = `${API_BASE}/users/${uuid}`;
+  async getUserProfile(identifier) {
+    const url = `${API_BASE}/users/${identifier}`;
     const response = await this.fetchWithRetry(url);
     
     if (response.status === 'success' && response.data) {
       return response.data;
     }
-    
     throw new Error('User not found');
+  },
+
+  async getUserMatches(identifier, type = 2, count = 50) {
+    const url = `${API_BASE}/users/${identifier}/matches?type=${type}&count=${count}`;
+    const response = await this.fetchWithRetry(url);
+    
+    if (response.status === 'success' && response.data) {
+      return response.data;
+    }
+    return { matches: [] };
   }
 };
 
 // ==================== UTILITY FUNCTIONS ====================
 const utils = {
+  formatTime(ms) {
+    if (!ms && ms !== 0) return 'N/A';
+    const totalSeconds = ms / 1000;
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = Math.floor(totalSeconds % 60);
+    const milliseconds = Math.floor(ms % 1000);
+    return `${mins}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+  },
+
   getCountryFlag(code) {
     const flags = {
       'vn': '🇻🇳', 'us': '🇺🇸', 'gb': '🇬🇧', 'ca': '🇨🇦',
@@ -77,8 +79,8 @@ const utils = {
   },
 
   getPlayerAvatar(uuid, size = 80) {
-    if (!uuid) return `https://crafatar.com/avatars/8667ba71b85a4004af54457a9734eed7?size=${size}&overlay`;
-    return `https://crafatar.com/avatars/${uuid}?size=${size}&overlay`;
+    if (!uuid) return `https://mc-heads.net/avatar/8667ba71b85a4004af54457a9734eed7/${size}`;
+    return `https://mc-heads.net/avatar/${uuid}/${size}`;
   },
 
   getRankIcon(rank) {
@@ -89,6 +91,58 @@ const utils = {
   }
 };
 
+// ==================== PLAYER STATS CALCULATOR ====================
+const calculatePlayerStats = (matches, playerUuid) => {
+  let wins = 0;
+  let loses = 0;
+  let forfeits = 0;
+  let totalTime = 0;
+  let completionCount = 0;
+  let bestTime = null;
+
+  matches.forEach(match => {
+    if (match.forfeited) {
+      forfeits++;
+    }
+
+    // Check if player won
+    if (match.result && match.result.uuid === playerUuid) {
+      wins++;
+    } else if (match.result && match.result.uuid && match.result.uuid !== playerUuid) {
+      loses++;
+    }
+
+    // Get player's completion time
+    if (match.completions && match.completions.length > 0) {
+      const playerCompletion = match.completions.find(c => c.uuid === playerUuid);
+      if (playerCompletion && playerCompletion.time) {
+        totalTime += playerCompletion.time;
+        completionCount++;
+        
+        if (bestTime === null || playerCompletion.time < bestTime) {
+          bestTime = playerCompletion.time;
+        }
+      }
+    }
+  });
+
+  const avgTime = completionCount > 0 ? totalTime / completionCount : 0;
+  const totalMatches = wins + loses;
+  const winRate = totalMatches > 0 ? ((wins / totalMatches) * 100).toFixed(1) : 0;
+  const forfeitRate = matches.length > 0 ? ((forfeits / matches.length) * 100).toFixed(1) : 0;
+
+  return {
+    wins,
+    loses,
+    totalMatches,
+    winRate,
+    forfeits,
+    forfeitRate,
+    bestTime,
+    avgTime
+  };
+};
+
 // ==================== SORTING ====================
 const sortPlayers = (players, sortBy, sortDirection) => {
   const sorted = [...players];
@@ -97,11 +151,12 @@ const sortPlayers = (players, sortBy, sortDirection) => {
     switch (key) {
       case 'rank': return player.rank || 999999;
       case 'elo': return player.eloRate || 0;
-      case 'wins': return player.total_wins || 0;
-      case 'loses': return player.total_loses || 0;
-      case 'winrate': 
-        const total = (player.total_wins || 0) + (player.total_loses || 0);
-        return total > 0 ? (player.total_wins / total) * 100 : 0;
+      case 'wins': return player.stats?.wins || 0;
+      case 'loses': return player.stats?.loses || 0;
+      case 'winrate': return parseFloat(player.stats?.winRate || 0);
+      case 'forfeit': return parseFloat(player.stats?.forfeitRate || 0);
+      case 'bestTime': return player.stats?.bestTime || 999999999;
+      case 'avgTime': return player.stats?.avgTime || 999999999;
       default: return 0;
     }
   };
@@ -122,13 +177,54 @@ const SortHeader = ({ label, sortKey, currentSort, sortDirection, onClick }) => 
   return (
     <button
       onClick={() => onClick(sortKey)}
-      className={`flex items-center gap-1 px-3 py-2 rounded-lg transition font-bold ${
+      className={`flex items-center gap-1 px-3 py-2 rounded-lg transition font-bold text-sm ${
         isActive ? 'bg-green-700 text-white' : 'text-gray-400 hover:bg-gray-800'
       }`}
     >
       <span>{label}</span>
       {isActive && (sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />)}
     </button>
+  );
+};
+
+// ==================== PLAYER MODAL ====================
+const PlayerModal = ({ player, onClose }) => {
+  if (!player) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-gray-900 rounded-2xl border-4 border-green-500 max-w-6xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-gradient-to-r from-green-700 to-emerald-700 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <img
+              src={utils.getPlayerAvatar(player.uuid, 80)}
+              alt={player.nickname}
+              className="w-16 h-16 rounded-xl border-2 border-yellow-400"
+            />
+            <div>
+              <h2 className="text-2xl font-black text-white">{player.nickname}</h2>
+              <p className="text-green-300 font-bold">
+                {utils.getCountryFlag(player.country)} #{player.rank} • {player.eloRate} ELO
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/20 rounded-lg transition"
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+        </div>
+        
+        <div className="h-[600px]">
+          <iframe
+            src={`https://mcsrranked.com/stats/${player.nickname}`}
+            className="w-full h-full"
+            title={`Stats for ${player.nickname}`}
+          />
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -142,7 +238,8 @@ export default function MCSRLeaderboardVN() {
   const [refreshing, setRefreshing] = useState(false);
   const [sortBy, setSortBy] = useState('rank');
   const [sortDirection, setSortDirection] = useState('asc');
-  const [detailedStats, setDetailedStats] = useState({});
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -164,19 +261,14 @@ export default function MCSRLeaderboardVN() {
       setLoading(true);
       setRefreshing(true);
       setError(null);
-      console.log('[FETCH] Starting leaderboard fetch for VN...');
 
-      // Fetch leaderboard for Vietnam (type 2 = Ranked)
       const leaderboardData = await apiService.getLeaderboard(2, 'VN', 100);
-      console.log('[FETCH] Leaderboard data:', leaderboardData);
-      
       const users = leaderboardData.users || [];
-      console.log(`[FETCH] Found ${users.length} Vietnamese players`);
 
       if (users.length === 0) {
         setError({
           title: 'Không có dữ liệu',
-          message: 'Không tìm thấy người chơi Việt Nam trong bảng xếp hạng',
+          message: 'Không tìm thấy người chơi Việt Nam',
           type: 'warning'
         });
         setPlayers([]);
@@ -184,7 +276,6 @@ export default function MCSRLeaderboardVN() {
         return;
       }
 
-      // Process players
       const processedPlayers = users.map((user, index) => ({
         uuid: user.uuid,
         nickname: user.nickname,
@@ -192,22 +283,13 @@ export default function MCSRLeaderboardVN() {
         eloRank: user.eloRank,
         country: user.country || 'vn',
         rank: index + 1,
-        // Initialize stats (will be loaded on demand)
-        total_wins: 0,
-        total_loses: 0,
-        statsLoaded: false
+        stats: null
       }));
 
-      console.log('[FETCH] Processed players:', processedPlayers.slice(0, 3));
       setPlayers(processedPlayers);
       setFilteredPlayers(sortPlayers(processedPlayers, sortBy, sortDirection));
 
-      // Load stats for top 20 players
-      console.log('[FETCH] Loading detailed stats for top players...');
-      loadPlayerStats(processedPlayers.slice(0, 20));
-
     } catch (err) {
-      console.error('[FETCH] Error:', err);
       setError({
         title: 'Lỗi kết nối',
         message: 'Không thể tải dữ liệu từ MCSR Ranked API',
@@ -222,47 +304,47 @@ export default function MCSRLeaderboardVN() {
     }
   };
 
-  const loadPlayerStats = async (playersList) => {
-    const statsMap = {};
+  const loadDetailedStats = async () => {
+    if (loadingStats) return;
     
-    for (const player of playersList) {
-      try {
-        const profile = await apiService.getUserProfile(player.uuid);
+    setLoadingStats(true);
+    setError(null);
+
+    try {
+      const updatedPlayers = [...players];
+      
+      for (let i = 0; i < Math.min(players.length, 50); i++) {
+        const player = players[i];
         
-        // Calculate total wins/loses from records
-        let totalWins = 0;
-        let totalLoses = 0;
-        
-        if (profile.records) {
-          // Type 2 = Ranked matches
-          if (profile.records['2']) {
-            totalWins = profile.records['2'].win || 0;
-            totalLoses = profile.records['2'].lose || 0;
+        try {
+          const matches = await apiService.getUserMatches(player.uuid, 2, 50);
+          const matchList = matches.matches || [];
+          
+          if (matchList.length > 0) {
+            const stats = calculatePlayerStats(matchList, player.uuid);
+            updatedPlayers[i] = { ...player, stats };
           }
+          
+          await new Promise(r => setTimeout(r, 150));
+        } catch (err) {
+          console.error(`Failed to load stats for ${player.nickname}:`, err.message);
         }
-        
-        statsMap[player.uuid] = {
-          total_wins: totalWins,
-          total_loses: totalLoses,
-          statsLoaded: true
-        };
-        
-        console.log(`[STATS] ${player.nickname}: ${totalWins}W ${totalLoses}L`);
-      } catch (err) {
-        console.error(`[STATS] Failed to load stats for ${player.nickname}:`, err.message);
       }
       
-      // Small delay to avoid rate limiting
-      await new Promise(r => setTimeout(r, 100));
+      setPlayers(updatedPlayers);
+      const sorted = sortPlayers(updatedPlayers, sortBy, sortDirection);
+      setFilteredPlayers(sorted);
+
+    } catch (err) {
+      setError({
+        title: 'Lỗi tải thống kê',
+        message: 'Không thể tải thống kê chi tiết',
+        details: err.message,
+        type: 'warning'
+      });
+    } finally {
+      setLoadingStats(false);
     }
-    
-    setDetailedStats(statsMap);
-    
-    // Update players with stats
-    setPlayers(prev => prev.map(p => ({
-      ...p,
-      ...(statsMap[p.uuid] || {})
-    })));
   };
 
   const handleSort = (key) => {
@@ -272,15 +354,6 @@ export default function MCSRLeaderboardVN() {
       setSortBy(key);
       setSortDirection(key === 'rank' ? 'asc' : 'desc');
     }
-  };
-
-  const getPlayerStats = (player) => {
-    const wins = player.total_wins || 0;
-    const loses = player.total_loses || 0;
-    const total = wins + loses;
-    const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : '0.0';
-    
-    return { wins, loses, total, winRate };
   };
 
   if (loading) {
@@ -307,6 +380,7 @@ export default function MCSRLeaderboardVN() {
     ? Math.round(players.reduce((sum, p) => sum + (p.eloRate || 0), 0) / totalPlayers)
     : 0;
   const topElo = totalPlayers > 0 ? (players[0]?.eloRate || 0) : 0;
+  const hasStats = players.some(p => p.stats !== null);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-gray-900">
@@ -369,7 +443,7 @@ export default function MCSRLeaderboardVN() {
           </div>
         </div>
 
-        {/* Search */}
+        {/* Search and Controls */}
         <div className="max-w-2xl mx-auto mb-8">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-6 h-6 text-green-400" />
@@ -381,23 +455,47 @@ export default function MCSRLeaderboardVN() {
               className="w-full pl-12 pr-4 py-4 bg-gray-900/80 border-4 border-green-500 rounded-xl text-white text-lg font-bold placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-green-500/50"
             />
           </div>
-          <button
-            onClick={fetchLeaderboard}
-            disabled={refreshing}
-            className="w-full mt-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl text-white font-bold hover:scale-105 transition disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {refreshing ? (
-              <>
-                <Loader className="w-5 h-5 animate-spin" />
-                ĐANG TẢI...
-              </>
-            ) : (
-              <>
-                <Zap className="w-5 h-5" />
-                LÀM MỚI DỮ LIỆU
-              </>
-            )}
-          </button>
+          <div className="flex gap-4 mt-4">
+            <button
+              onClick={fetchLeaderboard}
+              disabled={refreshing}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl text-white font-bold hover:scale-105 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {refreshing ? (
+                <>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  ĐANG TẢI...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-5 h-5" />
+                  LÀM MỚI
+                </>
+              )}
+            </button>
+            <button
+              onClick={loadDetailedStats}
+              disabled={loadingStats || hasStats}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl text-white font-bold hover:scale-105 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loadingStats ? (
+                <>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  ĐANG TẢI STATS...
+                </>
+              ) : hasStats ? (
+                <>
+                  <Award className="w-5 h-5" />
+                  ĐÃ TẢI STATS
+                </>
+              ) : (
+                <>
+                  <BarChart3 className="w-5 h-5" />
+                  TẢI THỐNG KÊ
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Error */}
@@ -414,7 +512,6 @@ export default function MCSRLeaderboardVN() {
                   {error.title}
                 </p>
                 <p className="text-sm mt-1 opacity-80">{error.message}</p>
-                {error.details && <p className="text-xs mt-1 opacity-60">{error.details}</p>}
               </div>
             </div>
           </div>
@@ -428,13 +525,19 @@ export default function MCSRLeaderboardVN() {
               BẢNG XẾP HẠNG
             </h2>
             
-            {/* Sort Controls */}
             <div className="flex flex-wrap gap-2">
               <SortHeader label="Hạng" sortKey="rank" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
               <SortHeader label="ELO" sortKey="elo" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
-              <SortHeader label="Thắng" sortKey="wins" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
-              <SortHeader label="Thua" sortKey="loses" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
-              <SortHeader label="Win Rate" sortKey="winrate" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+              {hasStats && (
+                <>
+                  <SortHeader label="Thắng" sortKey="wins" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+                  <SortHeader label="Thua" sortKey="loses" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+                  <SortHeader label="Win%" sortKey="winrate" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+                  <SortHeader label="Forfeit%" sortKey="forfeit" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+                  <SortHeader label="Best Time" sortKey="bestTime" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+                  <SortHeader label="Avg Time" sortKey="avgTime" currentSort={sortBy} sortDirection={sortDirection} onClick={handleSort} />
+                </>
+              )}
             </div>
           </div>
 
@@ -447,15 +550,15 @@ export default function MCSRLeaderboardVN() {
             ) : (
               <div className="space-y-3">
                 {filteredPlayers.map((player) => {
-                  const stats = getPlayerStats(player);
+                  const stats = player.stats;
                   
                   return (
                     <div
                       key={player.uuid}
-                      className="bg-gradient-to-r from-gray-800/60 to-gray-700/60 hover:from-gray-700/60 hover:to-gray-600/60 rounded-xl p-4 transition border-2 border-transparent hover:border-green-500/30"
+                      className="bg-gradient-to-r from-gray-800/60 to-gray-700/60 hover:from-gray-700/60 hover:to-gray-600/60 rounded-xl p-4 transition border-2 border-transparent hover:border-green-500/30 cursor-pointer"
+                      onClick={() => setSelectedPlayer(player)}
                     >
                       <div className="flex items-center justify-between">
-                        {/* Left */}
                         <div className="flex items-center gap-4">
                           <div className="w-16 text-center flex-shrink-0">
                             {utils.getRankIcon(player.rank)}
@@ -469,7 +572,7 @@ export default function MCSRLeaderboardVN() {
                               onError={(e) => e.target.src = utils.getPlayerAvatar(null, 60)}
                             />
                             <div>
-                              <p className="text-xl font-black text-white">
+                              <p className="text-xl font-black text-white hover:text-green-400 transition">
                                 {player.nickname}
                                 <span className="ml-2 text-xl">{utils.getCountryFlag(player.country)}</span>
                               </p>
@@ -480,39 +583,33 @@ export default function MCSRLeaderboardVN() {
                                 <span className="text-xs text-gray-400 font-bold">
                                   #{player.rank}
                                 </span>
-                                {player.statsLoaded && stats.total > 0 && (
-                                  <span className="text-xs font-bold bg-green-700 px-2 py-1 rounded-lg">
-                                    {stats.wins}W - {stats.loses}L
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </div>
                         </div>
 
-                        {/* Right - Stats */}
-                        {player.statsLoaded && stats.total > 0 ? (
-                          <div className="hidden lg:flex items-center gap-6">
+                        {stats && (
+                          <div className="hidden lg:grid grid-cols-4 gap-4">
                             <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">THẮNG</p>
-                              <p className="text-xl font-black text-green-400">{stats.wins}</p>
+                              <p className="text-xs text-gray-400 font-bold">W/L</p>
+                              <p className="text-lg font-black text-green-400">
+                                {stats.wins}/{stats.loses}
+                              </p>
                             </div>
                             <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">THUA</p>
-                              <p className="text-xl font-black text-red-400">{stats.loses}</p>
+                              <p className="text-xs text-gray-400 font-bold">WIN%</p>
+                              <p className="text-lg font-black text-yellow-400">{stats.winRate}%</p>
                             </div>
                             <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">WIN %</p>
-                              <p className="text-xl font-black text-yellow-400">{stats.winRate}%</p>
+                              <p className="text-xs text-gray-400 font-bold">FORFEIT%</p>
+                              <p className="text-lg font-black text-red-400">{stats.forfeitRate}%</p>
                             </div>
                             <div className="text-center">
-                              <p className="text-xs text-gray-400 font-bold">TRẬN</p>
-                              <p className="text-xl font-black text-blue-400">{stats.total}</p>
+                              <p className="text-xs text-gray-400 font-bold">BEST</p>
+                              <p className="text-lg font-black text-purple-400">
+                                {stats.bestTime ? utils.formatTime(stats.bestTime) : 'N/A'}
+                              </p>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="hidden lg:block text-gray-500 text-sm font-bold">
-                            {player.statsLoaded ? 'Chưa có trận đấu' : 'Đang tải...'}
                           </div>
                         )}
                       </div>
@@ -531,12 +628,21 @@ export default function MCSRLeaderboardVN() {
             <a href="https://mcsrranked.com" target="_blank" rel="noopener noreferrer" className="text-green-400 font-bold hover:underline">
               MCSR Ranked API
             </a>
+            {' • Avatar từ '}
+            <a href="https://mc-heads.net" target="_blank" rel="noopener noreferrer" className="text-green-400 font-bold hover:underline">
+              mc-heads.net
+            </a>
           </p>
           <p className="text-gray-600 text-xs mt-2">
-            © 2024 MCSR Vietnam Leaderboard
+            © 2024 MCSR Vietnam Leaderboard • Click vào tên để xem stats chi tiết
           </p>
         </div>
       </div>
+
+      {/* Player Modal */}
+      {selectedPlayer && (
+        <PlayerModal player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
+      )}
 
       {/* Floating Refresh */}
       <button
@@ -552,4 +658,4 @@ export default function MCSRLeaderboardVN() {
       </button>
     </div>
   );
-                             }
+}
