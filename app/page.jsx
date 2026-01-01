@@ -42,12 +42,28 @@ export default function VNMCSRLeaderboard() {
   const [seasonEndDate, setSeasonEndDate] = useState(null);
   const [countdown, setCountdown] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [viewMode, setViewMode] = useState('two-column'); // 'two-column' or 'popup'
+  const [viewMode, setViewMode] = useState('popup'); // Default to popup
   const [showSettings, setShowSettings] = useState(false);
+  const [preloadedIframes, setPreloadedIframes] = useState({});
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Preload iframes for top 10 players
+  useEffect(() => {
+    if (players.length > 0) {
+      const topPlayers = sortedPlayers.slice(0, 10);
+      topPlayers.forEach(player => {
+        if (!preloadedIframes[player.uuid]) {
+          setPreloadedIframes(prev => ({
+            ...prev,
+            [player.uuid]: true
+          }));
+        }
+      });
+    }
+  }, [players]);
 
   useEffect(() => {
     if (!seasonEndDate) return;
@@ -77,7 +93,6 @@ export default function VNMCSRLeaderboard() {
     try {
       setLoading(true);
       
-      // Load all players, not just top 100
       const response = await fetch(`${API_BASE}/leaderboard?type=2&country=VN`);
       const data = await response.json();
       
@@ -182,67 +197,181 @@ export default function VNMCSRLeaderboard() {
       padding: '20px',
       position: 'relative'
     }}>
-      {/* Settings Button */}
+      {/* Preload iframes invisibly */}
+      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        {Object.keys(preloadedIframes).map(uuid => {
+          const player = players.find(p => p.uuid === uuid);
+          return player ? (
+            <iframe
+              key={uuid}
+              src={`https://mcsrranked.com/stats/${player.nickname}`}
+              style={{ width: '1px', height: '1px' }}
+              title={`Preload ${player.nickname}`}
+            />
+          ) : null;
+        })}
+      </div>
+
+      {/* Settings Button - Minecraft Style */}
       <button
         onClick={() => setShowSettings(!showSettings)}
         style={{
           position: 'fixed',
           top: '20px',
           right: '20px',
-          background: '#2d5016',
-          border: '3px solid #3a6b1e',
+          background: showSettings ? '#5c7a29' : '#8b8b8b',
+          border: '4px solid',
+          borderColor: showSettings ? '#3a5c17 #1e3508 #1e3508 #3a5c17' : '#ffffff #555555 #555555 #ffffff',
           color: '#fff',
-          padding: '10px',
-          borderRadius: '8px',
+          padding: '12px 16px',
           cursor: 'pointer',
           zIndex: 1000,
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
           fontFamily: '"Minecraft", monospace',
-          fontSize: '14px'
+          fontSize: '16px',
+          boxShadow: showSettings ? 'inset 2px 2px 4px rgba(0,0,0,0.3)' : '2px 2px 4px rgba(0,0,0,0.5)',
+          textShadow: '2px 2px 0px rgba(0,0,0,0.5)',
+          transition: 'all 0.1s ease'
+        }}
+        onMouseEnter={(e) => {
+          if (!showSettings) {
+            e.currentTarget.style.background = '#a0a0a0';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!showSettings) {
+            e.currentTarget.style.background = '#8b8b8b';
+          }
         }}
       >
         <Settings size={20} />
-        Settings
+        Settings...
       </button>
 
-      {/* Settings Dropdown */}
+      {/* Settings Panel - Minecraft Style */}
       {showSettings && (
         <div style={{
           position: 'fixed',
-          top: '70px',
+          top: '80px',
           right: '20px',
-          background: '#1a1a1a',
-          border: '3px solid #3a6b1e',
-          borderRadius: '8px',
-          padding: '15px',
+          background: '#c6c6c6',
+          border: '4px solid',
+          borderColor: '#ffffff #555555 #555555 #ffffff',
+          padding: '20px',
           zIndex: 1000,
-          minWidth: '200px',
+          minWidth: '280px',
           fontFamily: '"Minecraft", monospace',
-          fontSize: '12px'
+          fontSize: '14px',
+          boxShadow: '4px 4px 0px rgba(0,0,0,0.4)',
+          color: '#000'
         }}>
-          <div style={{ marginBottom: '10px', fontWeight: 'bold' }}>View Mode:</div>
-          <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
-            <input
-              type="radio"
-              name="viewMode"
-              checked={viewMode === 'two-column'}
-              onChange={() => setViewMode('two-column')}
-              style={{ marginRight: '8px' }}
-            />
-            Two Column
-          </label>
-          <label style={{ display: 'block', cursor: 'pointer' }}>
-            <input
-              type="radio"
-              name="viewMode"
-              checked={viewMode === 'popup'}
-              onChange={() => setViewMode('popup')}
-              style={{ marginRight: '8px' }}
-            />
-            Popup Modal
-          </label>
+          <div style={{ 
+            marginBottom: '15px', 
+            fontSize: '18px',
+            fontWeight: 'bold',
+            textShadow: '2px 2px 0px rgba(255,255,255,0.5)',
+            borderBottom: '2px solid #555',
+            paddingBottom: '8px'
+          }}>
+            Options
+          </div>
+          
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{ marginBottom: '8px', fontWeight: 'bold' }}>View Mode:</div>
+            
+            <label style={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              marginBottom: '10px', 
+              cursor: 'pointer',
+              padding: '8px',
+              background: viewMode === 'popup' ? '#8b8b8b' : 'transparent',
+              border: '2px solid',
+              borderColor: viewMode === 'popup' ? '#555555 #ffffff #ffffff #555555' : 'transparent'
+            }}>
+              <div style={{
+                width: '20px',
+                height: '20px',
+                border: '2px solid #000',
+                marginRight: '10px',
+                background: viewMode === 'popup' ? '#5c7a29' : '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: 'inset 1px 1px 2px rgba(0,0,0,0.3)'
+              }}>
+                {viewMode === 'popup' && <div style={{ color: '#fff', fontWeight: 'bold' }}>✓</div>}
+              </div>
+              <input
+                type="radio"
+                name="viewMode"
+                checked={viewMode === 'popup'}
+                onChange={() => setViewMode('popup')}
+                style={{ display: 'none' }}
+              />
+              <span style={{ textShadow: '1px 1px 0px rgba(255,255,255,0.5)' }}>Popup Modal</span>
+            </label>
+            
+            <label style={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              cursor: 'pointer',
+              padding: '8px',
+              background: viewMode === 'two-column' ? '#8b8b8b' : 'transparent',
+              border: '2px solid',
+              borderColor: viewMode === 'two-column' ? '#555555 #ffffff #ffffff #555555' : 'transparent'
+            }}>
+              <div style={{
+                width: '20px',
+                height: '20px',
+                border: '2px solid #000',
+                marginRight: '10px',
+                background: viewMode === 'two-column' ? '#5c7a29' : '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: 'inset 1px 1px 2px rgba(0,0,0,0.3)'
+              }}>
+                {viewMode === 'two-column' && <div style={{ color: '#fff', fontWeight: 'bold' }}>✓</div>}
+              </div>
+              <input
+                type="radio"
+                name="viewMode"
+                checked={viewMode === 'two-column'}
+                onChange={() => setViewMode('two-column')}
+                style={{ display: 'none' }}
+              />
+              <span style={{ textShadow: '1px 1px 0px rgba(255,255,255,0.5)' }}>Two Column</span>
+            </label>
+          </div>
+
+          <button
+            onClick={() => setShowSettings(false)}
+            style={{
+              width: '100%',
+              background: '#8b8b8b',
+              border: '4px solid',
+              borderColor: '#ffffff #555555 #555555 #ffffff',
+              color: '#fff',
+              padding: '10px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              fontFamily: '"Minecraft", monospace',
+              textShadow: '2px 2px 0px rgba(0,0,0,0.5)',
+              marginTop: '10px'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#a0a0a0';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#8b8b8b';
+            }}
+          >
+            Done
+          </button>
         </div>
       )}
 
@@ -624,4 +753,4 @@ export default function VNMCSRLeaderboard() {
       `}</style>
     </div>
   );
-    }
+      }
