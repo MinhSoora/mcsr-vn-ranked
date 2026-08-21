@@ -3,7 +3,7 @@
 Bảng xếp hạng **Minecraft Speedrun Ranked (MCSR)** dành riêng cho **người chơi Việt Nam**.  
 Dữ liệu được lấy trực tiếp từ **MCSR Ranked API**, hiển thị theo thời gian thực.
 
-🌐 Demo: https://your-project.vercel.app
+🌐 Web: https://mcsr-vn-ranked.vercel.app/
 
 ---
 
