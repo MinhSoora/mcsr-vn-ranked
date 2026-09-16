@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, X, Settings, Download } from 'lucide-react';
 
-const API_BASE = 'https://api.mcsrranked.com';
+const API_BASE = 'https://mcsrranked.com/api/';
 
 const getEloColor = (elo) => {
   if (elo >= 2000) return '#e74c3c';
